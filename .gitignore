@@ -66,3 +66,5 @@ coverage/
 
 # TypeScript artifacts
 *.tsbuildinfo
+
+payment_processing.md
