@@ -1,0 +1,68 @@
+# -----------------------------
+# OS / Editor files
+# -----------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.vscode/
+.idea/
+*.iml
+
+# -----------------------------
+# Logs and runtime files
+# -----------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -----------------------------
+# Environment and secrets
+# -----------------------------
+.env
+.env.*
+!.env.example
+*.local
+
+# -----------------------------
+# Java / Maven / Spring Boot
+# -----------------------------
+**/target/
+**/build/
+**/out/
+
+*.class
+*.jar
+*.war
+*.ear
+
+# Spring Boot devtools restart
+.restart/
+
+# Test and coverage outputs
+**/surefire-reports/
+**/failsafe-reports/
+**/jacoco.exec
+**/site/
+
+# JVM crash logs
+hs_err_pid*
+replay_pid*
+
+# -----------------------------
+# Frontend/tooling artifacts
+# -----------------------------
+node_modules/
+dist/
+coverage/
+
+# Caches
+.cache/
+.parcel-cache/
+.eslintcache
+
+# TypeScript artifacts
+*.tsbuildinfo
