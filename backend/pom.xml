@@ -42,10 +42,10 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Spring JDBC (needed for schema.sql / data.sql auto-init) -->
+		<!-- Spring Data JPA (includes JDBC, Hibernate) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-jdbc</artifactId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
 		</dependency>
 
 
