@@ -27,6 +27,19 @@ public class AccountService {
     }
 
     public Account createAccount(Account account) {
+        // Force INSERT semantics even if client sends an id in payload.
+        account.setId(null);
+
+        if (account.getAccountStatus() == null) {
+            account.setAccountStatus(com.Project.PaymentProcessingSystem.model.AccountStatus.ACTIVE);
+        }
+        if (account.getIsBucketAccount() == null) {
+            account.setIsBucketAccount(false);
+        }
+        if (account.getMaxDailyLimit() == null) {
+            account.setMaxDailyLimit(new java.math.BigDecimal("50000.00"));
+        }
+
         return accountRepository.save(account);
     }
 
