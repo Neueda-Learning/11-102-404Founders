@@ -1,3 +1,131 @@
+/* ============================================================
+   PayFlow Hub – Custom Styles (Bootstrap 5.3 Extension)
+   ============================================================ */
+
+/* ======= Custom properties ======= */
+:root {
+  --pf-primary:       #4169e1;
+  --pf-primary-hover: #3558cc;
+  --pf-gradient:      linear-gradient(135deg, #6f98ff 0%, #4169e1 100%);
+  --pf-green-grad:    linear-gradient(135deg, #34d399 0%, #059669 100%);
+  --pf-shadow:        0 8px 28px rgba(65, 105, 225, 0.14);
+  --pf-shadow-hover:  0 18px 48px rgba(65, 105, 225, 0.24);
+  --pf-shadow-card:   0 4px 16px rgba(65, 105, 225, 0.08);
+  --pf-radius:        20px;
+  --pf-radius-md:     14px;
+  --pf-transition:    0.22s ease;
+}
+[data-bs-theme="light"] {
+  --pf-bg:          #f0f4ff;
+  --pf-surface:     #ffffff;
+  --pf-surface-2:   #f4f7ff;
+  --pf-border:      rgba(65, 105, 225, 0.14);
+  --pf-text-subtle: #5e6f91;
+  --bs-body-bg:     #f0f4ff;
+}
+[data-bs-theme="dark"] {
+  --pf-bg:          #070e1f;
+  --pf-surface:     #0f1d38;
+  --pf-surface-2:   #162a50;
+  --pf-border:      rgba(65, 105, 225, 0.28);
+  --pf-text-subtle: #8ca4ce;
+  --bs-body-bg:     #070e1f;
+  --bs-body-color:  #d4def5;
+}
+body {
+  background-color: var(--pf-bg) !important;
+  font-family: 'Inter', system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  transition: background-color 0.35s ease, color 0.3s ease;
+  min-height: 100vh;
+}
+.pf-navbar {
+  background: var(--pf-surface) !important;
+  border-bottom: 1px solid var(--pf-border);
+  box-shadow: 0 2px 16px rgba(65,105,225,.10);
+  backdrop-filter: blur(12px);
+}
+[data-bs-theme="dark"] .pf-navbar { background: rgba(10,20,45,.96) !important; }
+.pf-card {
+  background-color: var(--pf-surface) !important;
+  border: 1px solid var(--pf-border) !important;
+  border-radius: var(--pf-radius) !important;
+  box-shadow: var(--pf-shadow-card);
+  transition: transform var(--pf-transition), box-shadow var(--pf-transition), background-color .3s, border-color .3s;
+}
+.pf-card:hover { transform: translateY(-3px); box-shadow: var(--pf-shadow); }
+.pf-card-clickable { cursor: pointer; }
+.pf-card-clickable:hover { box-shadow: var(--pf-shadow-hover); }
+.pf-balance-card { background: var(--pf-gradient) !important; border-color: transparent !important; color: #fff !important; }
+.pf-balance-card * { color: inherit !important; }
+.pf-stat { border-left: 4px solid var(--pf-primary) !important; }
+.pf-avatar {
+  width: 52px; height: 52px; border-radius: 50%; background: var(--pf-gradient);
+  color: #fff; font-weight: 700; font-size: 1.2rem; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0; user-select: none;
+}
+.pf-avatar-sm {
+  width: 34px; height: 34px; border-radius: 50%; background: var(--pf-gradient);
+  color: #fff; font-weight: 700; font-size: .82rem; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0; user-select: none;
+}
+.pf-action-icon {
+  width: 74px; height: 74px; border-radius: 50%; background: rgba(65,105,225,.10);
+  color: var(--pf-primary); font-size: 2rem; display: flex; align-items: center;
+  justify-content: center; margin: 0 auto 1.2rem; transition: all .3s ease;
+}
+.pf-card-clickable:hover .pf-action-icon { background: var(--pf-gradient); color: #fff; transform: scale(1.1); }
+.pf-action-icon.green { background: rgba(5,150,105,.12); color: #059669; }
+.pf-card-clickable:hover .pf-action-icon.green { background: var(--pf-green-grad); color: #fff; }
+.pf-table thead th {
+  font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 600;
+  color: var(--pf-text-subtle); border-bottom: 2px solid var(--pf-border); padding: .75rem .75rem;
+}
+.pf-table tbody tr { cursor: pointer; transition: background var(--pf-transition); border-bottom: 1px solid var(--pf-border); }
+.pf-table tbody tr:hover { background: rgba(65,105,225,.05); }
+.pf-table tbody tr:last-child { border-bottom: none; }
+.badge-created   { background-color:#6b7280!important; }
+.badge-validated { background-color:#0891b2!important; }
+.badge-sent      { background-color:#b45309!important; }
+.badge-completed, .badge-success { background-color:#047857!important; }
+.badge-failed    { background-color:#b91c1c!important; }
+.badge-cancelled { background-color:#7f1d1d!important; }
+.badge-initiated { background-color:#5b21b6!important; }
+.btn-pf {
+  background: var(--pf-gradient); color: #fff !important; border: none;
+  font-weight: 600; border-radius: 12px; transition: all var(--pf-transition);
+}
+.btn-pf:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(65,105,225,.35); }
+.btn-pf:disabled { opacity:.65; transform:none; }
+.pf-progress { height: 8px; border-radius: 99px; overflow: hidden; background: rgba(65,105,225,.12); }
+[data-bs-theme="dark"] .pf-progress { background: rgba(65,105,225,.22); }
+.pf-modal .modal-content {
+  border-radius: var(--pf-radius) !important; border: 1px solid var(--pf-border) !important;
+  background: var(--pf-surface) !important; box-shadow: 0 24px 64px rgba(0,0,0,.22);
+}
+.campaign-card { cursor: pointer; transition: border-color .2s, box-shadow .2s, transform .2s; }
+.campaign-card:hover { border-color: var(--pf-primary) !important; box-shadow: 0 0 0 2px rgba(65,105,225,.22); transform: translateY(-2px); }
+.campaign-card.selected { border-color: var(--pf-primary) !important; box-shadow: 0 0 0 3px rgba(65,105,225,.3); }
+.pf-surface-2 { background: var(--pf-surface-2) !important; border-radius: var(--pf-radius-md); }
+[data-bs-theme="dark"] .dropdown-menu { background-color: var(--pf-surface-2) !important; border-color: var(--pf-border) !important; }
+[data-bs-theme="dark"] .dropdown-item:hover { background-color: rgba(65,105,225,.12) !important; }
+[data-bs-theme="dark"] .dropdown-divider { border-color: var(--pf-border) !important; }
+[data-bs-theme="dark"] .modal-content { background-color: var(--pf-surface) !important; border-color: var(--pf-border) !important; }
+[data-bs-theme="dark"] .form-control, [data-bs-theme="dark"] .form-select {
+  background-color: var(--pf-surface-2) !important; border-color: var(--pf-border) !important; color: var(--bs-body-color) !important;
+}
+.pf-timeline-dot { width:10px; height:10px; border-radius:50%; background:var(--pf-primary); flex-shrink:0; margin-top:4px; }
+@keyframes pf-in {
+  from { opacity:0; transform:translateY(14px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.pf-in { animation: pf-in .4s ease both; }
+@media (max-width:576px) {
+  .pf-avatar { width:44px; height:44px; font-size:1rem; }
+  .pf-action-icon { width:60px; height:60px; font-size:1.6rem; }
+  .pf-card { border-radius:16px !important; }
+}
+
+/* -------- LEGACY vars kept for backward compat -------- */
 :root {
     --bg: #f8f7f0;
     --bg-soft: #eef3ff;
