@@ -6,53 +6,115 @@
     <title>Payment Processing System Workspace</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body data-theme="light">
     <div class="loading-screen" id="loadingScreen" aria-hidden="true">
         <div class="loader-orb"></div>
         <p>Loading payment workspace...</p>
     </div>
 
-    <div class="background-glow" aria-hidden="true"></div>
-
     <header class="site-header" id="siteHeader">
         <nav class="navbar container" aria-label="Main navigation">
-            <a class="brand" href="#workspace">404<span>Founders</span></a>
+            <a class="brand" href="#workspace" aria-label="Payment Workspace">
+                <span class="brand-logo" aria-hidden="true">
+                    <svg viewBox="0 0 48 48" role="img" focusable="false">
+                        <defs>
+                            <linearGradient id="logoGradient" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#6f98ff" />
+                                <stop offset="100%" stop-color="#4169e1" />
+                            </linearGradient>
+                        </defs>
+                        <rect x="4" y="10" width="40" height="28" rx="10" fill="url(#logoGradient)"></rect>
+                        <rect x="10" y="18" width="20" height="4" rx="2" fill="#ffffff"></rect>
+                        <circle cx="34" cy="30" r="4" fill="#ffffff"></circle>
+                    </svg>
+                </span>
+                <span class="brand-text">PayFlow <strong>Hub</strong></span>
+            </a>
+
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
+
             <ul class="nav-links" id="navLinks">
                 <li><a href="#workspace">Create Payment</a></li>
-                <li><a href="#payments">Payment Monitor</a></li>
+                <li><a href="#payments">Transactions</a></li>
                 <li><a href="#details">Audit Trail</a></li>
                 <li><a href="#datahub">Data Hub</a></li>
             </ul>
-            <button class="btn btn-ghost" id="refreshAllBtn">Refresh Data</button>
+
+            <div class="header-actions">
+                <button class="btn btn-ghost" id="refreshAllBtn">Refresh Data</button>
+
+                <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">
+                    <span class="theme-toggle-track">
+                        <span class="theme-toggle-thumb"></span>
+                    </span>
+                    <span class="theme-toggle-label" id="themeToggleLabel">Light</span>
+                </button>
+
+                <div class="profile" id="profileMenuRoot">
+                    <button class="profile-trigger" id="profileTrigger" type="button" aria-haspopup="true" aria-expanded="false">
+                        <span class="avatar" aria-hidden="true">U</span>
+                        <span class="profile-meta">
+                            <strong id="profileName">Workspace User</strong>
+                            <small>Payments Team</small>
+                        </span>
+                        <span class="profile-caret" aria-hidden="true">▼</span>
+                    </button>
+                    <div class="profile-dropdown" id="profileDropdown" hidden>
+                        <button type="button">Profile</button>
+                        <button type="button">Account settings</button>
+                        <button type="button">Security</button>
+                        <button type="button">Logout</button>
+                    </div>
+                </div>
+            </div>
         </nav>
     </header>
 
     <main>
         <section class="hero container" id="workspace" data-reveal>
-            <div class="hero-content glass">
-                <p class="eyebrow">Payment Processing System</p>
-                <h1>Create and track payments as the primary workflow</h1>
-                <p class="hero-text">This UI is mapped to your backend endpoints and schema: accounts, campaigns, payments, status audit, and support tickets.</p>
+            <div class="hero-content card">
+                <p class="eyebrow">Payment Processing Dashboard</p>
+                <h1>Welcome back, build and track every payment with confidence.</h1>
+                <p class="hero-text">This workspace remains fully connected to your existing Spring Boot endpoints while giving you a cleaner fintech-style UI.</p>
+
                 <div class="hero-metrics" id="kpiStrip">
-                    <div>
+                    <div class="metric-box">
                         <p class="metric-label">Payments</p>
                         <p class="metric-value" data-kpi="payments">0</p>
                     </div>
-                    <div>
+                    <div class="metric-box">
                         <p class="metric-label">Completed</p>
                         <p class="metric-value" data-kpi="completed">0</p>
                     </div>
-                    <div>
+                    <div class="metric-box">
                         <p class="metric-label">Failed</p>
                         <p class="metric-value" data-kpi="failed">0</p>
                     </div>
                 </div>
+
+                <div class="insight-grid">
+                    <article class="card insight-card">
+                        <p>Total Balance</p>
+                        <h3 id="totalBalanceValue">0.00</h3>
+                    </article>
+                    <article class="card insight-card">
+                        <p>Income (Completed)</p>
+                        <h3 id="incomeValue">0.00</h3>
+                    </article>
+                    <article class="card insight-card">
+                        <p>Expense (Failed)</p>
+                        <h3 id="expenseValue">0.00</h3>
+                    </article>
+                    <article class="card insight-card">
+                        <p>Success Rate</p>
+                        <h3 id="successRateValue">0%</h3>
+                    </article>
+                </div>
             </div>
 
-            <div class="hero-form glass">
+            <div class="hero-form card">
                 <div class="panel-head">
                     <h2>Create Payment</h2>
                     <small>POST /api/payments</small>
@@ -112,16 +174,61 @@
                         <button type="button" class="btn btn-ghost" id="resetPaymentFormBtn">Reset</button>
                     </div>
                 </form>
-                <p class="inline-note">Validation follows backend service rules: supported currency, positive amount, max amount, active accounts, and matching account currency.</p>
+                <p class="inline-note">Validation follows backend rules: supported currency, positive amount, max amount, active accounts, and matching account currency.</p>
+            </div>
+        </section>
+
+        <section class="section container" data-reveal>
+            <div class="dashboard-grid">
+                <article class="card wallet-card">
+                    <div class="wallet-top">
+                        <p>Primary Wallet</p>
+                        <span>Virtual</span>
+                    </div>
+                    <h3>**** **** **** 2804</h3>
+                    <p class="wallet-balance" id="walletBalanceValue">USD 0.00</p>
+                    <div class="wallet-footer">
+                        <span>Secure Payment Network</span>
+                    </div>
+                </article>
+
+                <article class="card quick-actions-card">
+                    <div class="panel-head">
+                        <h3>Quick Actions</h3>
+                        <small>Fast workflows</small>
+                    </div>
+                    <div class="quick-actions-grid">
+                        <button class="btn btn-soft" id="quickActionCreate">Create Payment</button>
+                        <button class="btn btn-soft" id="quickActionTransactions">View Transactions</button>
+                        <button class="btn btn-soft" id="quickActionAudit">Open Audit Trail</button>
+                        <button class="btn btn-soft" id="quickActionDataHub">Open Data Hub</button>
+                    </div>
+                </article>
+
+                <article class="card categories-card">
+                    <div class="panel-head">
+                        <h3>Spending Categories</h3>
+                        <small>By payment type</small>
+                    </div>
+                    <div id="spendingCategoryList" class="stack-list"></div>
+                </article>
+
+                <article class="card recent-card">
+                    <div class="panel-head">
+                        <h3>Recent Transactions</h3>
+                        <small>Latest 5</small>
+                    </div>
+                    <div id="recentTransactionsList" class="stack-list"></div>
+                </article>
             </div>
         </section>
 
         <section class="section container" id="payments" data-reveal>
             <div class="section-heading">
                 <h2>Payment Monitor</h2>
-                <p>GET /api/payments with status-aware filtering and quick drill-down.</p>
+                <p>GET /api/payments with status filtering and quick drill-down.</p>
             </div>
-            <div class="toolbar glass">
+            <div class="toolbar card">
                 <label class="field">
                     <span>Search payment reference</span>
                     <input id="paymentSearch" type="search" placeholder="PAY-20260803-0004">
@@ -143,7 +250,7 @@
                 </label>
                 <button class="btn btn-ghost" id="refreshPaymentsBtn">Refresh Payments</button>
             </div>
-            <div class="table-wrap glass">
+            <div class="table-wrap card">
                 <table class="payments-table">
                     <thead>
                         <tr>
@@ -158,7 +265,7 @@
                     <tbody id="paymentsTableBody"></tbody>
                 </table>
             </div>
-            <div class="empty-state glass" id="paymentsEmptyState" hidden>
+            <div class="empty-state card" id="paymentsEmptyState" hidden>
                 <h3>No payments match this filter</h3>
                 <p>Try another status or clear the search query.</p>
             </div>
@@ -167,24 +274,24 @@
         <section class="section container" id="details" data-reveal>
             <div class="section-heading">
                 <h2>Selected Payment Details</h2>
-                <p>Payment metadata from payments, audit transitions from payment_status_audit, and linked support tickets.</p>
+                <p>Payment metadata, status transitions, and related support tickets.</p>
             </div>
             <div class="details-grid">
-                <article class="glass panel" id="selectedPaymentPanel">
+                <article class="card panel" id="selectedPaymentPanel">
                     <div class="panel-head">
                         <h3>Payment Snapshot</h3>
                         <small id="selectedPaymentReference">Select a payment row</small>
                     </div>
                     <div class="kv-grid" id="paymentSnapshot"></div>
                 </article>
-                <article class="glass panel">
+                <article class="card panel">
                     <div class="panel-head">
                         <h3>Status Timeline</h3>
                         <small>GET /api/payments/{id}/history</small>
                     </div>
                     <ul class="timeline" id="auditTimeline"></ul>
                 </article>
-                <article class="glass panel">
+                <article class="card panel">
                     <div class="panel-head">
                         <h3>Related Tickets</h3>
                         <small>GET /api/tickets?paymentId=</small>
@@ -200,21 +307,21 @@
                 <p>Supporting entities from your schema used in payment workflows.</p>
             </div>
             <div class="hub-grid">
-                <article class="glass panel">
+                <article class="card panel">
                     <div class="panel-head">
                         <h3>Accounts</h3>
                         <small id="accountsCount">0</small>
                     </div>
                     <div id="accountsList" class="list-stack"></div>
                 </article>
-                <article class="glass panel">
+                <article class="card panel">
                     <div class="panel-head">
                         <h3>Crowdfunding Campaigns</h3>
                         <small id="campaignsCount">0</small>
                     </div>
                     <div id="campaignsList" class="list-stack"></div>
                 </article>
-                <article class="glass panel">
+                <article class="card panel">
                     <div class="panel-head">
                         <h3>Open / In Progress Tickets</h3>
                         <small id="openTicketsCount">0</small>
