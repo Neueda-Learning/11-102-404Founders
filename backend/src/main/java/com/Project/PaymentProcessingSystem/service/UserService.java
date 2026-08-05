@@ -6,7 +6,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class UserService {
@@ -36,6 +38,23 @@ public class UserService {
         if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User email is required");
         }
+        if (user.getDefaultCurrency() == null || user.getDefaultCurrency().trim().isEmpty()) {
+            user.setDefaultCurrency("USD");
+        }
+        String normalizedCurrency = user.getDefaultCurrency().trim().toUpperCase(Locale.ROOT);
+        if (!("USD".equals(normalizedCurrency) || "INR".equals(normalizedCurrency)
+                || "EUR".equals(normalizedCurrency) || "GBP".equals(normalizedCurrency))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported default currency");
+        }
+        user.setDefaultCurrency(normalizedCurrency);
+
+        if (user.getDailyTransactionLimit() == null) {
+            user.setDailyTransactionLimit(new BigDecimal("5000.00"));
+        }
+        if (user.getDailyTransactionLimit().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Daily transaction limit must be greater than zero");
+        }
+
         userRepository.findByEmail(user.getEmail().trim())
                 .ifPresent(existing -> {
                     throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");

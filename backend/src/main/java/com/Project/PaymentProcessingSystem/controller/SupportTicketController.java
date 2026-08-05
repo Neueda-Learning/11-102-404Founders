@@ -32,20 +32,9 @@ public class SupportTicketController {
     public List<SupportTicket> getTickets(@RequestParam(required = false) TicketStatus status,
                                           @RequestParam(required = false) Long paymentId,
                                           @RequestParam(required = false) Long userId,
-                                          @RequestParam(required = false) TicketType type) {
-        if (status != null) {
-            return supportTicketService.getTicketsByStatus(status);
-        }
-        if (paymentId != null) {
-            return supportTicketService.getTicketsByPaymentId(paymentId);
-        }
-        if (userId != null) {
-            return supportTicketService.getTicketsByUserId(userId);
-        }
-        if (type != null) {
-            return supportTicketService.getTicketsByType(type);
-        }
-        return supportTicketService.getAllTickets();
+                                          @RequestParam(required = false) TicketType type,
+                                          @RequestParam(required = false) String query) {
+        return supportTicketService.findTickets(status, paymentId, userId, type, query);
     }
 
     @GetMapping("/{id}")

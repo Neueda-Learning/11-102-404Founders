@@ -2,8 +2,11 @@ package com.Project.PaymentProcessingSystem.service;
 
 import com.Project.PaymentProcessingSystem.model.Account;
 import com.Project.PaymentProcessingSystem.model.AccountStatus;
+import com.Project.PaymentProcessingSystem.model.CampaignStatus;
 import com.Project.PaymentProcessingSystem.model.CreatePaymentRequest;
+import com.Project.PaymentProcessingSystem.model.CrowdfundingCampaign;
 import com.Project.PaymentProcessingSystem.model.DashboardAnalyticsResponse;
+import com.Project.PaymentProcessingSystem.model.DisputeRole;
 import com.Project.PaymentProcessingSystem.model.Payment;
 import com.Project.PaymentProcessingSystem.model.PaymentStatus;
 import com.Project.PaymentProcessingSystem.model.PaymentStatusAudit;
@@ -11,42 +14,42 @@ import com.Project.PaymentProcessingSystem.model.PaymentType;
 import com.Project.PaymentProcessingSystem.model.SupportTicket;
 import com.Project.PaymentProcessingSystem.model.TicketPriority;
 import com.Project.PaymentProcessingSystem.model.TicketStatus;
+import com.Project.PaymentProcessingSystem.model.TicketType;
 import com.Project.PaymentProcessingSystem.repository.CrowdfundingCampaignRepository;
 import com.Project.PaymentProcessingSystem.repository.PaymentRepository;
 import com.Project.PaymentProcessingSystem.repository.PaymentStatusAuditRepository;
 import com.Project.PaymentProcessingSystem.repository.SupportTicketRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
 @Service
 public class PaymentService {
+
     private static final Set<String> SUPPORTED_CURRENCIES = Set.of("INR", "USD", "EUR", "GBP");
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("1000000.00");
-    private static final BigDecimal FOREX_FEE_RATE = new BigDecimal("0.025");
-    private static final Map<String, BigDecimal> INR_RATES = new HashMap<>();
-    static {
-        INR_RATES.put("INR", BigDecimal.ONE);
-        INR_RATES.put("USD", new BigDecimal("0.0120"));
-        INR_RATES.put("EUR", new BigDecimal("0.0110"));
-        INR_RATES.put("GBP", new BigDecimal("0.0095"));
-    }
+
     private final PaymentRepository paymentRepository;
     private final PaymentStatusAuditRepository auditRepository;
     private final SupportTicketRepository ticketRepository;
     private final CrowdfundingCampaignRepository campaignRepository;
     private final AccountService accountService;
+
     public PaymentService(PaymentRepository paymentRepository,
                           PaymentStatusAuditRepository auditRepository,
                           SupportTicketRepository ticketRepository,
@@ -58,70 +61,186 @@ public class PaymentService {
         this.campaignRepository = campaignRepository;
         this.accountService = accountService;
     }
+
     public List<Payment> getAllPayments() {
         return paymentRepository.findAll();
     }
+
+    public List<Payment> getAllPayments(Long userId) {
+        if (userId == null) {
+            return getAllPayments();
+        }
+        return paymentRepository.findByUserScope(userId);
+    }
+
     public List<Payment> getPaymentsByStatuses(Set<PaymentStatus> statuses) {
-        if (statuses == null || statuses.isEmpty()) return getAllPayments();
+        return getPaymentsByStatuses(statuses, null);
+    }
+
+    public List<Payment> getPaymentsByStatuses(Set<PaymentStatus> statuses, Long userId) {
+        if (statuses == null || statuses.isEmpty()) {
+            return getAllPayments(userId);
+        }
+        if (userId != null) {
+            return paymentRepository.findByUserScopeAndStatusIn(userId, statuses);
+        }
         return paymentRepository.findByStatusIn(statuses);
     }
+
+    public List<Payment> findPaymentsForWorkspace(Long userId,
+                                                  Set<PaymentStatus> statuses,
+                                                  PaymentType paymentType,
+                                                  String currency,
+                                                  LocalDate fromDate,
+                                                  LocalDate toDate,
+                                                  Long sourceAccountId,
+                                                  Long destinationAccountId,
+                                                  String reference,
+                                                  String sortBy,
+                                                  String sortDir) {
+        List<Payment> filtered = new ArrayList<>(getPaymentsByStatuses(statuses, userId));
+
+        if (paymentType != null) {
+            filtered.removeIf(payment -> payment.getPaymentType() != paymentType);
+        }
+
+        if (reference != null && !reference.trim().isEmpty()) {
+            String normalized = reference.trim().toLowerCase(Locale.ROOT);
+            filtered.removeIf(payment -> payment.getPaymentReference() == null
+                    || !payment.getPaymentReference().toLowerCase(Locale.ROOT).contains(normalized));
+        }
+
+        if (currency != null && !currency.trim().isEmpty()) {
+            String normalizedCurrency = currency.trim().toUpperCase(Locale.ROOT);
+            filtered.removeIf(payment -> payment.getCurrencyCode() == null
+                    || !normalizedCurrency.equalsIgnoreCase(payment.getCurrencyCode()));
+        }
+
+        if (sourceAccountId != null) {
+            filtered.removeIf(payment -> !sourceAccountId.equals(payment.getSourceAccountId()));
+        }
+
+        if (destinationAccountId != null) {
+            filtered.removeIf(payment -> !destinationAccountId.equals(payment.getDestinationAccountId()));
+        }
+
+        if (fromDate != null) {
+            filtered.removeIf(payment -> payment.getCreatedAt() == null || payment.getCreatedAt().toLocalDate().isBefore(fromDate));
+        }
+
+        if (toDate != null) {
+            filtered.removeIf(payment -> payment.getCreatedAt() == null || payment.getCreatedAt().toLocalDate().isAfter(toDate));
+        }
+
+        int direction = "asc".equalsIgnoreCase(sortDir) ? 1 : -1;
+        if ("amount".equalsIgnoreCase(sortBy)) {
+            filtered.sort((left, right) -> {
+                BigDecimal leftAmount = left.getAmount() == null ? BigDecimal.ZERO : left.getAmount();
+                BigDecimal rightAmount = right.getAmount() == null ? BigDecimal.ZERO : right.getAmount();
+                return leftAmount.compareTo(rightAmount) * direction;
+            });
+        } else {
+            filtered.sort((left, right) -> {
+                LocalDateTime leftTime = left.getCreatedAt() == null ? LocalDateTime.MIN : left.getCreatedAt();
+                LocalDateTime rightTime = right.getCreatedAt() == null ? LocalDateTime.MIN : right.getCreatedAt();
+                return leftTime.compareTo(rightTime) * direction;
+            });
+        }
+
+        return filtered;
+    }
+
     public Payment getPaymentById(Long id) {
         return paymentRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found"));
     }
+
     public List<PaymentStatusAudit> getPaymentAuditTrail(Long paymentId) {
         getPaymentById(paymentId);
         return auditRepository.findByPaymentIdOrderByChangedAtAsc(paymentId);
     }
+
+    @Transactional
     public Payment createPayment(CreatePaymentRequest request) {
         validateRequest(request);
+
         Account source = accountService.getAccountById(request.getSourceAccountId());
-        Account dest   = accountService.getAccountById(request.getDestinationAccountId());
-        String srcCcy = normalizeCurrency(request.getCurrencyCode());
-        String dstCcy = request.getDestinationCurrencyCode() == null || request.getDestinationCurrencyCode().isBlank()
-                ? normalizeCurrency(dest.getCurrencyCode())
-                : normalizeCurrency(request.getDestinationCurrencyCode());
+        Account destination = accountService.getAccountById(request.getDestinationAccountId());
 
-        accountService.validateAccountOwnedByUser(source, request.getUserId());
-        validateAccounts(source, dest, srcCcy, dstCcy, request.getAmount());
+        String sourceCurrency = normalizeCurrency(request.getCurrencyCode());
+        String destinationCurrency = normalizeCurrency(
+                request.getDestinationCurrencyCode() == null || request.getDestinationCurrencyCode().isBlank()
+                        ? destination.getCurrencyCode()
+                        : request.getDestinationCurrencyCode()
+        );
 
-        if (!dstCcy.equalsIgnoreCase(dest.getCurrencyCode())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destination currency must match destination account currency");
-        }
+        PaymentType normalizedType = normalizePaymentType(request.getPaymentType());
 
-        BigDecimal fee        = calculateFee(srcCcy, dstCcy, request.getAmount());
-        BigDecimal converted  = convert(request.getAmount(), srcCcy, dstCcy);
-        BigDecimal totalDebit = request.getAmount().add(fee);
-        source.setBalance(source.getBalance().subtract(totalDebit));
-        dest.setBalance(dest.getBalance().add(converted));
-        accountService.save(source);
-        accountService.save(dest);
         Payment payment = new Payment();
         payment.setPaymentReference(generateRef());
         payment.setSourceAccountId(source.getId());
-        payment.setDestinationAccountId(dest.getId());
+        payment.setDestinationAccountId(destination.getId());
         payment.setAmount(request.getAmount().setScale(2, RoundingMode.HALF_UP));
-        payment.setCurrencyCode(srcCcy);
-        payment.setDestinationCurrencyCode(dstCcy);
-        payment.setPaymentType(normalizePaymentType(request.getPaymentType()));
+        payment.setCurrencyCode(sourceCurrency);
+        payment.setDestinationCurrencyCode(destinationCurrency);
+        payment.setPaymentType(normalizedType);
         payment.setCrowdfundingCampaignId(request.getCrowdfundingCampaignId());
         payment.setStatus(PaymentStatus.CREATED);
-        payment.setIdempotencyKey(resolveIdempotencyKey(request, dstCcy));
-        payment.setForexFee(fee);
-        payment.setConvertedAmount(converted);
+        payment.setIdempotencyKey(resolveIdempotencyKey(request, destinationCurrency));
+        payment.setForexFee(BigDecimal.ZERO);
+        payment.setConvertedAmount(request.getAmount().setScale(2, RoundingMode.HALF_UP));
         payment.setErrorCode(null);
         payment.setCreatedAt(LocalDateTime.now());
         payment.setCompletedAt(null);
+
         Payment saved = paymentRepository.save(payment);
         writeAudit(saved.getId(), null, PaymentStatus.CREATED, "Payment created");
-        saved = step(saved, PaymentStatus.VALIDATED);
-        saved = step(saved, PaymentStatus.SENT);
-        return paymentRepository.save(saved);
+
+        try {
+            validateAccounts(source, destination, request, sourceCurrency, destinationCurrency);
+            CrowdfundingCampaign campaign = null;
+            if (normalizedType == PaymentType.CROWDFUNDING_PAYMENT) {
+                campaign = validateCampaign(request.getCrowdfundingCampaignId(), destination, destinationCurrency);
+            }
+
+            saved = step(saved, PaymentStatus.VALIDATED, "Validation complete");
+            saved = step(saved, PaymentStatus.PROCESSING, "Payment is processing");
+
+            source.setBalance(source.getBalance().subtract(saved.getAmount()));
+            destination.setBalance(destination.getBalance().add(saved.getAmount()));
+            accountService.save(source);
+            accountService.save(destination);
+
+            if (campaign != null) {
+                BigDecimal current = campaign.getCurrentAmount() == null ? BigDecimal.ZERO : campaign.getCurrentAmount();
+                BigDecimal updated = current.add(saved.getAmount());
+                campaign.setCurrentAmount(updated);
+                if (campaign.getTargetAmount() != null && updated.compareTo(campaign.getTargetAmount()) >= 0) {
+                    campaign.setStatus(CampaignStatus.COMPLETED);
+                }
+                campaignRepository.save(campaign);
+            }
+
+            saved = step(saved, PaymentStatus.COMPLETED, "Payment completed successfully");
+            saved.setCompletedAt(LocalDateTime.now());
+            saved.setErrorCode(null);
+            return paymentRepository.save(saved);
+        } catch (ResponseStatusException ex) {
+            saved.setErrorCode(ex.getReason());
+            saved = step(saved, PaymentStatus.FAILED, ex.getReason() == null ? "Payment failed" : ex.getReason());
+            saved.setCompletedAt(LocalDateTime.now());
+            createFailureTicket(saved, saved.getErrorCode());
+            return paymentRepository.save(saved);
+        }
     }
+
     public Payment updatePaymentStatus(Long paymentId, PaymentStatus newStatus, String reason) {
-        if (newStatus == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status is required");
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status is required");
+        }
         Payment payment = getPaymentById(paymentId);
-        payment = step(payment, newStatus);
+        payment = step(payment, newStatus, reason);
+
         if (newStatus == PaymentStatus.COMPLETED) {
             payment.setCompletedAt(LocalDateTime.now());
             payment.setErrorCode(null);
@@ -129,69 +248,128 @@ public class PaymentService {
                 contributeToCampaign(payment);
             }
         }
+
         if (newStatus == PaymentStatus.FAILED) {
             payment.setCompletedAt(LocalDateTime.now());
-            if (reason != null && !reason.isBlank()) payment.setErrorCode(reason.trim());
+            if (reason != null && !reason.isBlank()) {
+                payment.setErrorCode(reason.trim());
+            }
             createFailureTicket(payment, reason);
         }
         return paymentRepository.save(payment);
     }
+
     public Payment cancelPayment(Long paymentId, String reason) {
         Payment payment = getPaymentById(paymentId);
         if (payment.getStatus() == PaymentStatus.COMPLETED || payment.getStatus() == PaymentStatus.FAILED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot cancel a terminal payment");
         }
-        payment = step(payment, PaymentStatus.FAILED);
+        payment = step(payment, PaymentStatus.FAILED, reason == null ? "Cancelled by user" : reason);
         payment.setErrorCode(reason != null && !reason.isBlank() ? reason.trim() : "Cancelled by user");
         payment.setCompletedAt(LocalDateTime.now());
         createFailureTicket(payment, payment.getErrorCode());
         return paymentRepository.save(payment);
     }
+
     public DashboardAnalyticsResponse getDashboardAnalytics() {
-        List<Payment> payments = paymentRepository.findAll();
-        long total      = payments.size();
-        long successful = payments.stream().filter(p -> p.getStatus() == PaymentStatus.COMPLETED).count();
-        long failed     = payments.stream().filter(p -> p.getStatus() == PaymentStatus.FAILED).count();
-        long pending    = total - successful - failed;
-        BigDecimal totalAmount = payments.stream()
-                .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal successPct = total == 0 ? BigDecimal.ZERO
-                : BigDecimal.valueOf(successful * 100).divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
-        BigDecimal avgAmount = total == 0 ? BigDecimal.ZERO
-                : totalAmount.divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
-        DashboardAnalyticsResponse r = new DashboardAnalyticsResponse();
-        r.setTotalPayments(total);
-        r.setSuccessfulPayments(successful);
-        r.setFailedPayments(failed);
-        r.setPendingPayments(pending);
-        r.setSuccessPercentage(successPct);
-        r.setTotalAmountProcessed(totalAmount);
-        r.setAverageTransactionAmount(avgAmount);
-        return r;
+        return getDashboardAnalytics(null);
     }
-    private Payment step(Payment payment, PaymentStatus next) {
+
+    public DashboardAnalyticsResponse getDashboardAnalytics(Long userId) {
+        List<Payment> payments = getAllPayments(userId);
+        List<Account> scopedAccounts = userId == null ? accountService.getAllAccounts() : accountService.getAccountsByUserId(userId);
+
+        long total = payments.size();
+        long completed = payments.stream().filter(payment -> payment.getStatus() == PaymentStatus.COMPLETED).count();
+        long failed = payments.stream().filter(payment -> payment.getStatus() == PaymentStatus.FAILED).count();
+        long pending = payments.stream().filter(this::isPendingStatus).count();
+
+        BigDecimal totalAmount = payments.stream()
+                .map(payment -> payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal average = total == 0
+                ? BigDecimal.ZERO
+                : totalAmount.divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
+
+        BigDecimal successPercent = total == 0
+                ? BigDecimal.ZERO
+                : BigDecimal.valueOf(completed).multiply(new BigDecimal("100"))
+                .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
+
+        BigDecimal totalBalance = scopedAccounts.stream()
+                .map(account -> account.getBalance() == null ? BigDecimal.ZERO : account.getBalance())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal largestTransaction = payments.stream()
+                .map(payment -> payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount())
+                .max(BigDecimal::compareTo)
+                .orElse(BigDecimal.ZERO);
+
+        Set<Long> scopedAccountIds = scopedAccounts.stream().map(Account::getId).collect(java.util.stream.Collectors.toSet());
+        BigDecimal income = payments.stream()
+                .filter(payment -> payment.getStatus() == PaymentStatus.COMPLETED)
+                .filter(payment -> scopedAccountIds.contains(payment.getDestinationAccountId()))
+                .map(payment -> payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal expense = payments.stream()
+                .filter(payment -> payment.getStatus() == PaymentStatus.COMPLETED)
+                .filter(payment -> scopedAccountIds.contains(payment.getSourceAccountId()))
+                .map(payment -> payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal crowdfundingDonations = payments.stream()
+                .filter(payment -> payment.getStatus() == PaymentStatus.COMPLETED)
+                .filter(payment -> payment.getPaymentType() == PaymentType.CROWDFUNDING || payment.getPaymentType() == PaymentType.CROWDFUNDING_PAYMENT)
+                .filter(payment -> scopedAccountIds.contains(payment.getSourceAccountId()))
+                .map(payment -> payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        DashboardAnalyticsResponse response = new DashboardAnalyticsResponse();
+        response.setTotalPayments(total);
+        response.setSuccessfulPayments(completed);
+        response.setFailedPayments(failed);
+        response.setPendingPayments(pending);
+        response.setSuccessPercentage(successPercent);
+        response.setTotalAmountProcessed(totalAmount);
+        response.setAverageTransactionAmount(average);
+        response.setTotalBalance(totalBalance);
+        response.setIncome(income);
+        response.setExpense(expense);
+        response.setLargestTransaction(largestTransaction);
+        response.setCrowdfundingDonations(crowdfundingDonations);
+        return response;
+    }
+
+    private Payment step(Payment payment, PaymentStatus next, String reason) {
         PaymentStatus current = payment.getStatus();
-        if (current == next) return payment;
+        if (current == next) {
+            return payment;
+        }
         validateTransition(current, next);
         payment.setStatus(next);
-        writeAudit(payment.getId(), current, next, "Status updated to " + next);
+        writeAudit(payment.getId(), current, next, reason == null || reason.isBlank() ? "Status updated" : reason);
         return payment;
     }
+
     private void validateTransition(PaymentStatus from, PaymentStatus to) {
-        if (from == null) return;
+        if (from == null) {
+            return;
+        }
         Map<PaymentStatus, Set<PaymentStatus>> map = Map.of(
-                PaymentStatus.CREATED,   EnumSet.of(PaymentStatus.VALIDATED, PaymentStatus.FAILED),
-                PaymentStatus.VALIDATED, EnumSet.of(PaymentStatus.SENT,      PaymentStatus.FAILED),
-                PaymentStatus.SENT,      EnumSet.of(PaymentStatus.COMPLETED,  PaymentStatus.FAILED),
+                PaymentStatus.CREATED, EnumSet.of(PaymentStatus.VALIDATED, PaymentStatus.FAILED),
+                PaymentStatus.VALIDATED, EnumSet.of(PaymentStatus.PROCESSING, PaymentStatus.FAILED),
+                PaymentStatus.PROCESSING, EnumSet.of(PaymentStatus.COMPLETED, PaymentStatus.FAILED),
+                PaymentStatus.SENT, EnumSet.of(PaymentStatus.COMPLETED, PaymentStatus.FAILED),
                 PaymentStatus.COMPLETED, EnumSet.noneOf(PaymentStatus.class),
-                PaymentStatus.FAILED,    EnumSet.noneOf(PaymentStatus.class)
+                PaymentStatus.FAILED, EnumSet.noneOf(PaymentStatus.class)
         );
         if (!map.getOrDefault(from, EnumSet.noneOf(PaymentStatus.class)).contains(to)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Invalid transition from " + from + " to " + to);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid transition from " + from + " to " + to);
         }
     }
+
     private void writeAudit(Long paymentId, PaymentStatus from, PaymentStatus to, String description) {
         PaymentStatusAudit audit = new PaymentStatusAudit();
         audit.setPaymentId(paymentId);
@@ -202,12 +380,13 @@ public class PaymentService {
         audit.setChangedAt(LocalDateTime.now());
         auditRepository.save(audit);
     }
+
     private void createFailureTicket(Payment payment, String reason) {
         SupportTicket ticket = new SupportTicket();
         ticket.setTicketNumber(generateTicketNum());
         ticket.setPaymentId(payment.getId());
         ticket.setAccountId(payment.getSourceAccountId());
-        var source = accountService.getAccountById(payment.getSourceAccountId());
+        Account source = accountService.getAccountById(payment.getSourceAccountId());
         if (source.getUser() != null) {
             ticket.setUserId(source.getUser().getId());
         }
@@ -216,22 +395,28 @@ public class PaymentService {
         ticket.setFailureReason(reason);
         ticket.setPriority(TicketPriority.HIGH);
         ticket.setStatus(TicketStatus.OPEN);
-        ticket.setTicketType(com.Project.PaymentProcessingSystem.model.TicketType.FAILED_PAYMENT);
-        ticket.setDisputeRole(com.Project.PaymentProcessingSystem.model.DisputeRole.NONE);
+        ticket.setTicketType(TicketType.FAILED_PAYMENT);
+        ticket.setDisputeRole(DisputeRole.NONE);
         ticket.setRecoveryRequested(Boolean.FALSE);
         ticket.setCreatedAt(LocalDateTime.now());
         ticketRepository.save(ticket);
     }
+
     private void contributeToCampaign(Payment payment) {
-        if (payment.getCrowdfundingCampaignId() == null) return;
+        if (payment.getCrowdfundingCampaignId() == null || payment.getAmount() == null) {
+            return;
+        }
         campaignRepository.findById(payment.getCrowdfundingCampaignId()).ifPresent(campaign -> {
             BigDecimal current = campaign.getCurrentAmount() == null ? BigDecimal.ZERO : campaign.getCurrentAmount();
-            String targetCcy = campaign.getTargetCurrency() != null
-                    ? normalizeCurrency(campaign.getTargetCurrency()) : payment.getCurrencyCode();
-            campaign.setCurrentAmount(current.add(convert(payment.getAmount(), payment.getCurrencyCode(), targetCcy)));
+            BigDecimal updated = current.add(payment.getAmount());
+            campaign.setCurrentAmount(updated);
+            if (campaign.getTargetAmount() != null && updated.compareTo(campaign.getTargetAmount()) >= 0) {
+                campaign.setStatus(CampaignStatus.COMPLETED);
+            }
             campaignRepository.save(campaign);
         });
     }
+
     private void validateRequest(CreatePaymentRequest req) {
         if (req == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required");
@@ -239,51 +424,128 @@ public class PaymentService {
         if (req.getUserId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User id is required");
         }
-        if (req.getSourceAccountId() == null)
+        if (req.getSourceAccountId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source account required");
-        if (req.getDestinationAccountId() == null)
+        }
+        if (req.getDestinationAccountId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destination account required");
-        if (req.getSourceAccountId().equals(req.getDestinationAccountId()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source and destination must differ");
-        if (req.getAmount() == null || req.getAmount().compareTo(BigDecimal.ZERO) <= 0)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be positive");
-        if (req.getAmount().compareTo(MAX_AMOUNT) > 0)
+        }
+        if (req.getSourceAccountId().equals(req.getDestinationAccountId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment Failed - Source and destination accounts cannot be the same.");
+        }
+        if (req.getAmount() == null || req.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment Failed - Amount must be greater than zero.");
+        }
+        if (req.getAmount().compareTo(MAX_AMOUNT) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount exceeds maximum limit");
-        String currency = normalizeCurrency(req.getCurrencyCode());
-        if (!SUPPORTED_CURRENCIES.contains(currency))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported currency: " + currency);
-        if (req.getDestinationCurrencyCode() != null && !req.getDestinationCurrencyCode().isBlank()) {
-            String destinationCurrency = normalizeCurrency(req.getDestinationCurrencyCode());
-            if (!SUPPORTED_CURRENCIES.contains(destinationCurrency)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported destination currency: " + destinationCurrency);
-            }
+        }
+        if (!SUPPORTED_CURRENCIES.contains(normalizeCurrency(req.getCurrencyCode()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment Failed - Unsupported currency selected.");
+        }
+        if (req.getDestinationCurrencyCode() != null && !req.getDestinationCurrencyCode().isBlank()
+                && !SUPPORTED_CURRENCIES.contains(normalizeCurrency(req.getDestinationCurrencyCode()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported destination currency");
         }
         if ((req.getPaymentType() == PaymentType.CROWDFUNDING || req.getPaymentType() == PaymentType.CROWDFUNDING_PAYMENT)
-                && req.getCrowdfundingCampaignId() == null)
+                && req.getCrowdfundingCampaignId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign ID required for crowdfunding payments");
+        }
+
+        String generatedIdempotency = resolveIdempotencyKey(req, req.getDestinationCurrencyCode() == null ? req.getCurrencyCode() : req.getDestinationCurrencyCode());
+        if (paymentRepository.findTopByIdempotencyKeyOrderByCreatedAtDesc(generatedIdempotency).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment Failed - Duplicate payment detected.");
+        }
     }
-    private void validateAccounts(Account src, Account dst, String srcCcy, String dstCcy, BigDecimal amount) {
-        if (src.getAccountStatus() != AccountStatus.ACTIVE)
+
+    private void validateAccounts(Account source,
+                                  Account destination,
+                                  CreatePaymentRequest request,
+                                  String sourceCurrency,
+                                  String destinationCurrency) {
+        accountService.validateAccountOwnedByUser(source, request.getUserId());
+
+        if (source.getAccountStatus() != AccountStatus.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source account is not active");
-        if (dst.getAccountStatus() != AccountStatus.ACTIVE)
+        }
+        if (destination.getAccountStatus() != AccountStatus.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destination account is not active");
-        if (!srcCcy.equalsIgnoreCase(src.getCurrencyCode()))
+        }
+        if (!sourceCurrency.equalsIgnoreCase(source.getCurrencyCode())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment currency must match source account currency");
-        if (src.getMaxDailyLimit() != null && amount.compareTo(src.getMaxDailyLimit()) > 0)
+        }
+        if (!destinationCurrency.equalsIgnoreCase(destination.getCurrencyCode())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destination currency must match destination account currency");
+        }
+        if (source.getMaxDailyLimit() != null && request.getAmount().compareTo(source.getMaxDailyLimit()) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount exceeds account daily limit");
-        BigDecimal fee = calculateFee(srcCcy, dstCcy, amount);
-        if (src.getBalance() == null || src.getBalance().compareTo(amount.add(fee)) < 0)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient balance in source account");
+        }
+        if (source.getBalance() == null || source.getBalance().compareTo(request.getAmount()) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment Failed - Your account does not have sufficient balance.");
+        }
+
+        if (source.getUser() != null && source.getUser().getDailyTransactionLimit() != null
+                && request.getAmount().compareTo(source.getUser().getDailyTransactionLimit()) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment Failed - Daily transaction limit exceeded.");
+        }
+
+        if (request.getSourceAccountNumber() != null && !request.getSourceAccountNumber().isBlank()) {
+            if (!request.getSourceAccountNumber().trim().equals(source.getAccountNumber())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source account number does not match");
+            }
+        }
+        if (request.getDestinationAccountNumber() != null && !request.getDestinationAccountNumber().isBlank()) {
+            if (!request.getDestinationAccountNumber().trim().equals(destination.getAccountNumber())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destination account number does not match");
+            }
+        }
+    }
+
+    private CrowdfundingCampaign validateCampaign(Long campaignId, Account destinationAccount, String destinationCurrency) {
+        if (campaignId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign ID required for crowdfunding payments");
+        }
+        CrowdfundingCampaign campaign = campaignRepository.findById(campaignId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found"));
+
+        if (campaign.getStatus() != CampaignStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign is not active");
+        }
+        if (campaign.getCampaignEndDate() != null && campaign.getCampaignEndDate().isBefore(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign has ended");
+        }
+        if (!destinationAccount.getId().equals(campaign.getBucketAccountId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destination account must be the campaign bucket account");
+        }
+        if (campaign.getTargetCurrency() != null && !campaign.getTargetCurrency().equalsIgnoreCase(destinationCurrency)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign currency must match destination currency");
+        }
+
+        BigDecimal current = campaign.getCurrentAmount() == null ? BigDecimal.ZERO : campaign.getCurrentAmount();
+        BigDecimal target = campaign.getTargetAmount() == null ? BigDecimal.ZERO : campaign.getTargetAmount();
+        if (target.compareTo(BigDecimal.ZERO) > 0 && current.compareTo(target) >= 0) {
+            campaign.setStatus(CampaignStatus.COMPLETED);
+            campaignRepository.save(campaign);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign target already reached");
+        }
+        return campaign;
     }
 
     private PaymentType normalizePaymentType(PaymentType paymentType) {
-        if (paymentType == null || paymentType == PaymentType.NORMAL_PAYMENT) {
-            return PaymentType.REGULAR;
+        if (paymentType == null || paymentType == PaymentType.REGULAR) {
+            return PaymentType.NORMAL_PAYMENT;
         }
-        if (paymentType == PaymentType.CROWDFUNDING_PAYMENT) {
-            return PaymentType.CROWDFUNDING;
+        if (paymentType == PaymentType.CROWDFUNDING) {
+            return PaymentType.CROWDFUNDING_PAYMENT;
         }
         return paymentType;
+    }
+
+    private boolean isPendingStatus(Payment payment) {
+        return payment.getStatus() == PaymentStatus.CREATED
+                || payment.getStatus() == PaymentStatus.VALIDATED
+                || payment.getStatus() == PaymentStatus.PROCESSING
+                || payment.getStatus() == PaymentStatus.SENT
+                || payment.getStatus() == PaymentStatus.INITIATED;
     }
 
     private String resolveIdempotencyKey(CreatePaymentRequest request, String destinationCurrency) {
@@ -293,29 +555,21 @@ public class PaymentService {
         String raw = request.getUserId() + "|" + request.getSourceAccountId() + "|" + request.getDestinationAccountId() + "|"
                 + request.getAmount() + "|" + request.getCurrencyCode() + "|" + destinationCurrency + "|"
                 + request.getPaymentType() + "|" + request.getCrowdfundingCampaignId();
-        return UUID.nameUUIDFromBytes(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        return UUID.nameUUIDFromBytes(raw.getBytes(StandardCharsets.UTF_8)).toString();
     }
-    private BigDecimal calculateFee(String src, String dst, BigDecimal amount) {
-        return src.equals(dst) ? BigDecimal.ZERO
-                : amount.multiply(FOREX_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
-    }
-    private BigDecimal convert(BigDecimal amount, String src, String dst) {
-        if (src.equals(dst)) return amount.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal srcRate = INR_RATES.get(src);
-        BigDecimal dstRate = INR_RATES.get(dst);
-        if (srcRate == null || dstRate == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported currency pair: " + src + " -> " + dst);
-        return amount.divide(srcRate, 6, RoundingMode.HALF_UP).multiply(dstRate).setScale(2, RoundingMode.HALF_UP);
-    }
+
     private String normalizeCurrency(String code) {
-        if (code == null || code.isBlank())
+        if (code == null || code.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Currency code required");
+        }
         return code.trim().toUpperCase(Locale.ROOT);
     }
+
     private String generateRef() {
         return "PAY-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
                 + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
     }
+
     private String generateTicketNum() {
         return "TKT-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
                 + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(Locale.ROOT);

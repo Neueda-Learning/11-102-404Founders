@@ -4,6 +4,7 @@ import com.Project.PaymentProcessingSystem.model.DashboardAnalyticsResponse;
 import com.Project.PaymentProcessingSystem.service.PaymentService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -17,8 +18,8 @@ public class DashboardController {
     }
 
     @GetMapping("/analytics")
-    public DashboardAnalyticsResponse getAnalytics() {
-        return paymentService.getDashboardAnalytics();
+    public DashboardAnalyticsResponse getAnalytics(@RequestParam(required = false) Long userId) {
+        return paymentService.getDashboardAnalytics(userId);
     }
 }
 

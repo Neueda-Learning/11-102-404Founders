@@ -56,6 +56,9 @@ public class Account {
     @Column(name = "bank_ifsc", length = 30)
     private String bankIfsc;
 
+    @Column(name = "account_type", length = 80)
+    private String accountType;
+
     public Account() {
     }
 
@@ -99,4 +102,7 @@ public class Account {
 
     public String getBankIfsc() { return bankIfsc; }
     public void setBankIfsc(String bankIfsc) { this.bankIfsc = bankIfsc; }
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
 }

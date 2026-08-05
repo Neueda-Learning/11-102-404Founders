@@ -27,6 +27,21 @@ public class User {
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
+    @Column(name = "phone_number", length = 30)
+    private String phoneNumber;
+
+    @Column(name = "address", length = 255)
+    private String address;
+
+    @Column(name = "country", length = 80)
+    private String country;
+
+    @Column(name = "default_currency", length = 3)
+    private String defaultCurrency;
+
+    @Column(name = "daily_transaction_limit", precision = 15, scale = 2)
+    private java.math.BigDecimal dailyTransactionLimit;
+
     @OneToMany(mappedBy = "user")
     @JsonIgnoreProperties({"user"})
     private List<Account> accounts = new ArrayList<>();
@@ -53,6 +68,46 @@ public class User {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getCountry() {
+        return country;
+    }
+
+    public void setCountry(String country) {
+        this.country = country;
+    }
+
+    public String getDefaultCurrency() {
+        return defaultCurrency;
+    }
+
+    public void setDefaultCurrency(String defaultCurrency) {
+        this.defaultCurrency = defaultCurrency;
+    }
+
+    public java.math.BigDecimal getDailyTransactionLimit() {
+        return dailyTransactionLimit;
+    }
+
+    public void setDailyTransactionLimit(java.math.BigDecimal dailyTransactionLimit) {
+        this.dailyTransactionLimit = dailyTransactionLimit;
     }
 
     public List<Account> getAccounts() {

@@ -5,7 +5,12 @@
 CREATE TABLE IF NOT EXISTS users (
     user_id    BIGINT PRIMARY KEY AUTO_INCREMENT,
     full_name  VARCHAR(255) NOT NULL,
-    email      VARCHAR(255) NOT NULL UNIQUE
+    email      VARCHAR(255) NOT NULL UNIQUE,
+    phone_number VARCHAR(30),
+    address VARCHAR(255),
+    country VARCHAR(80),
+    default_currency VARCHAR(3),
+    daily_transaction_limit DECIMAL(15, 2) DEFAULT 5000.00
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -15,6 +20,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     account_number      VARCHAR(30) UNIQUE,
     bank_name           VARCHAR(120),
     bank_ifsc           VARCHAR(30),
+    account_type        VARCHAR(80),
     currency_code       VARCHAR(3) NOT NULL,
     balance             DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
     account_status      ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
@@ -87,7 +93,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     title              VARCHAR(255) NOT NULL,
     description        TEXT NOT NULL,
     failure_reason     TEXT,
-    ticket_type        ENUM('GENERAL', 'FAILED_PAYMENT', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL',
+    ticket_type        ENUM('GENERAL', 'FAILED_PAYMENT', 'WRONG_RECIPIENT', 'DUPLICATE_PAYMENT', 'DAILY_LIMIT_EXCEEDED', 'INSUFFICIENT_FUNDS', 'CURRENCY_CONVERSION_ISSUE', 'OTHER', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL',
     dispute_role       ENUM('NONE', 'SENDER', 'RECEIVER') NOT NULL DEFAULT 'NONE',
     recovery_requested BOOLEAN DEFAULT FALSE,
     priority           ENUM('LOW', 'MEDIUM', 'HIGH', 'CRITICAL') NOT NULL DEFAULT 'MEDIUM',
@@ -361,4 +367,91 @@ SET @stmt = (
 PREPARE s18 FROM @stmt;
 EXECUTE s18;
 DEALLOCATE PREPARE s18;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'phone_number'
+        ),
+        'SELECT 1',
+        'ALTER TABLE users ADD COLUMN phone_number VARCHAR(30)'
+    )
+);
+PREPARE s19 FROM @stmt;
+EXECUTE s19;
+DEALLOCATE PREPARE s19;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'address'
+        ),
+        'SELECT 1',
+        'ALTER TABLE users ADD COLUMN address VARCHAR(255)'
+    )
+);
+PREPARE s20 FROM @stmt;
+EXECUTE s20;
+DEALLOCATE PREPARE s20;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'country'
+        ),
+        'SELECT 1',
+        'ALTER TABLE users ADD COLUMN country VARCHAR(80)'
+    )
+);
+PREPARE s21 FROM @stmt;
+EXECUTE s21;
+DEALLOCATE PREPARE s21;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'default_currency'
+        ),
+        'SELECT 1',
+        'ALTER TABLE users ADD COLUMN default_currency VARCHAR(3)'
+    )
+);
+PREPARE s22 FROM @stmt;
+EXECUTE s22;
+DEALLOCATE PREPARE s22;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'daily_transaction_limit'
+        ),
+        'SELECT 1',
+        'ALTER TABLE users ADD COLUMN daily_transaction_limit DECIMAL(15, 2) DEFAULT 5000.00'
+    )
+);
+PREPARE s23 FROM @stmt;
+EXECUTE s23;
+DEALLOCATE PREPARE s23;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'accounts' AND column_name = 'account_type'
+        ),
+        'SELECT 1',
+        'ALTER TABLE accounts ADD COLUMN account_type VARCHAR(80)'
+    )
+);
+PREPARE s24 FROM @stmt;
+EXECUTE s24;
+DEALLOCATE PREPARE s24;
+
+ALTER TABLE support_tickets
+    MODIFY COLUMN ticket_type ENUM('GENERAL', 'FAILED_PAYMENT', 'WRONG_RECIPIENT', 'DUPLICATE_PAYMENT', 'DAILY_LIMIT_EXCEEDED', 'INSUFFICIENT_FUNDS', 'CURRENCY_CONVERSION_ISSUE', 'OTHER', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL';
 

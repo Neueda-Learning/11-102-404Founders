@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -115,7 +116,11 @@ public class CrowdfundingCampaignService {
         response.setCollectedAmount(collected);
         response.setTargetAmount(target);
         response.setRemainingAmount(remaining);
+        response.setPercentageComplete(target.compareTo(BigDecimal.ZERO) == 0
+                ? BigDecimal.ZERO
+                : collected.multiply(new BigDecimal("100")).divide(target, 2, RoundingMode.HALF_UP));
         response.setDaysUntilDeadline(daysUntilDeadline);
+        response.setStatus(campaign.getStatus());
         return response;
     }
 
@@ -123,6 +128,19 @@ public class CrowdfundingCampaignService {
         CrowdfundingCampaign campaign = getCampaignById(campaignId);
         if (campaign.getStatus() != CampaignStatus.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only ACTIVE campaigns accept contributions");
+        }
+        if (campaign.getCampaignEndDate() != null && campaign.getCampaignEndDate().isBefore(LocalDate.now())) {
+            campaign.setStatus(CampaignStatus.CANCELLED);
+            campaignRepository.save(campaign);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign has ended");
+        }
+
+        BigDecimal currentAmount = campaign.getCurrentAmount() == null ? BigDecimal.ZERO : campaign.getCurrentAmount();
+        BigDecimal targetAmount = campaign.getTargetAmount() == null ? BigDecimal.ZERO : campaign.getTargetAmount();
+        if (targetAmount.compareTo(BigDecimal.ZERO) > 0 && currentAmount.compareTo(targetAmount) >= 0) {
+            campaign.setStatus(CampaignStatus.COMPLETED);
+            campaignRepository.save(campaign);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign target has been reached");
         }
 
         CreatePaymentRequest paymentRequest = new CreatePaymentRequest();

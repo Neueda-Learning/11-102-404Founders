@@ -9,7 +9,9 @@ public class CampaignTrackingResponse {
     private BigDecimal targetAmount;
     private BigDecimal collectedAmount;
     private BigDecimal remainingAmount;
+    private BigDecimal percentageComplete;
     private long daysUntilDeadline;
+    private CampaignStatus status;
 
     public Long getCampaignId() {
         return campaignId;
@@ -51,12 +53,28 @@ public class CampaignTrackingResponse {
         this.remainingAmount = remainingAmount;
     }
 
+    public BigDecimal getPercentageComplete() {
+        return percentageComplete;
+    }
+
+    public void setPercentageComplete(BigDecimal percentageComplete) {
+        this.percentageComplete = percentageComplete;
+    }
+
     public long getDaysUntilDeadline() {
         return daysUntilDeadline;
     }
 
     public void setDaysUntilDeadline(long daysUntilDeadline) {
         this.daysUntilDeadline = daysUntilDeadline;
+    }
+
+    public CampaignStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(CampaignStatus status) {
+        this.status = status;
     }
 }
 

@@ -5,9 +5,11 @@ import com.Project.PaymentProcessingSystem.model.DashboardAnalyticsResponse;
 import com.Project.PaymentProcessingSystem.model.Payment;
 import com.Project.PaymentProcessingSystem.model.PaymentStatus;
 import com.Project.PaymentProcessingSystem.model.PaymentStatusAudit;
+import com.Project.PaymentProcessingSystem.model.PaymentType;
 import com.Project.PaymentProcessingSystem.service.PaymentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -34,8 +37,30 @@ public class PaymentController {
     }
 
     @GetMapping
-    public List<Payment> getAllPayments(@RequestParam(required = false) Set<PaymentStatus> status) {
-        return paymentService.getPaymentsByStatuses(status);
+    public List<Payment> getAllPayments(@RequestParam(required = false) Set<PaymentStatus> status,
+                                        @RequestParam(required = false) Long userId,
+                                        @RequestParam(required = false) PaymentType paymentType,
+                                        @RequestParam(required = false) String currency,
+                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+                                        @RequestParam(required = false) Long sourceAccountId,
+                                        @RequestParam(required = false) Long destinationAccountId,
+                                        @RequestParam(required = false) String reference,
+                                        @RequestParam(defaultValue = "date") String sortBy,
+                                        @RequestParam(defaultValue = "desc") String sortDir) {
+        return paymentService.findPaymentsForWorkspace(
+                userId,
+                status,
+                paymentType,
+                currency,
+                fromDate,
+                toDate,
+                sourceAccountId,
+                destinationAccountId,
+                reference,
+                sortBy,
+                sortDir
+        );
     }
 
     @GetMapping("/{id}")
@@ -75,7 +100,7 @@ public class PaymentController {
     }
 
     @GetMapping("/analytics/dashboard")
-    public DashboardAnalyticsResponse getDashboard() {
-        return paymentService.getDashboardAnalytics();
+    public DashboardAnalyticsResponse getDashboard(@RequestParam(required = false) Long userId) {
+        return paymentService.getDashboardAnalytics(userId);
     }
 }

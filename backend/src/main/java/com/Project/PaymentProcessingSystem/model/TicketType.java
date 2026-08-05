@@ -3,6 +3,12 @@ package com.Project.PaymentProcessingSystem.model;
 public enum TicketType {
     GENERAL,
     FAILED_PAYMENT,
+    WRONG_RECIPIENT,
+    DUPLICATE_PAYMENT,
+    DAILY_LIMIT_EXCEEDED,
+    INSUFFICIENT_FUNDS,
+    CURRENCY_CONVERSION_ISSUE,
+    OTHER,
     DISPUTE_SENDER,
     DISPUTE_RECEIVER
 }

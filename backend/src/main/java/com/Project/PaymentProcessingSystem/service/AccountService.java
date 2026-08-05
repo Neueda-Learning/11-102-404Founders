@@ -42,6 +42,9 @@ public class AccountService {
         if (account.getIsBucketAccount() == null) account.setIsBucketAccount(false);
         if (account.getMaxDailyLimit() == null) account.setMaxDailyLimit(new BigDecimal("50000.00"));
         if (account.getBalance() == null) account.setBalance(BigDecimal.ZERO);
+        if (account.getAccountType() == null || account.getAccountType().trim().isEmpty()) {
+            account.setAccountType(account.getIsBucketAccount() != null && account.getIsBucketAccount() ? "Bucket Account" : "Checking Account");
+        }
         if (account.getUser() != null && account.getUser().getId() != null) {
             User user = userService.getUserById(account.getUser().getId());
             account.setUser(user);
@@ -76,6 +79,7 @@ public class AccountService {
         if (updated.getAccountNumber() != null) existing.setAccountNumber(updated.getAccountNumber());
         if (updated.getBankName() != null) existing.setBankName(updated.getBankName());
         if (updated.getBankIfsc() != null) existing.setBankIfsc(updated.getBankIfsc());
+        if (updated.getAccountType() != null) existing.setAccountType(updated.getAccountType());
         return accountRepository.save(existing);
     }
 

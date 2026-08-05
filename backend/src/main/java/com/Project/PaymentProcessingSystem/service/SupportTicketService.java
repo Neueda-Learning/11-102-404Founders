@@ -17,6 +17,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class SupportTicketService {
@@ -51,6 +52,27 @@ public class SupportTicketService {
 
     public List<SupportTicket> getTicketsByType(TicketType ticketType) {
         return supportTicketRepository.findByTicketType(ticketType);
+    }
+
+    public List<SupportTicket> findTickets(TicketStatus status,
+                                           Long paymentId,
+                                           Long userId,
+                                           TicketType ticketType,
+                                           String query) {
+        return supportTicketRepository.findAll().stream()
+                .filter(ticket -> status == null || status == ticket.getStatus())
+                .filter(ticket -> paymentId == null || paymentId.equals(ticket.getPaymentId()))
+                .filter(ticket -> userId == null || userId.equals(ticket.getUserId()))
+                .filter(ticket -> ticketType == null || ticketType == ticket.getTicketType())
+                .filter(ticket -> {
+                    if (query == null || query.trim().isEmpty()) {
+                        return true;
+                    }
+                    String normalized = query.trim().toLowerCase(Locale.ROOT);
+                    return (ticket.getTicketNumber() != null && ticket.getTicketNumber().toLowerCase(Locale.ROOT).contains(normalized))
+                            || (ticket.getTitle() != null && ticket.getTitle().toLowerCase(Locale.ROOT).contains(normalized));
+                })
+                .collect(Collectors.toList());
     }
 
     public SupportTicket getTicketById(Long id) {

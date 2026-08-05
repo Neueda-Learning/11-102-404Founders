@@ -11,6 +11,11 @@ public class DashboardAnalyticsResponse {
     private BigDecimal successPercentage;
     private BigDecimal totalAmountProcessed;
     private BigDecimal averageTransactionAmount;
+    private BigDecimal totalBalance;
+    private BigDecimal income;
+    private BigDecimal expense;
+    private BigDecimal largestTransaction;
+    private BigDecimal crowdfundingDonations;
 
     public long getTotalPayments() {
         return totalPayments;
@@ -66,6 +71,46 @@ public class DashboardAnalyticsResponse {
 
     public void setAverageTransactionAmount(BigDecimal averageTransactionAmount) {
         this.averageTransactionAmount = averageTransactionAmount;
+    }
+
+    public BigDecimal getTotalBalance() {
+        return totalBalance;
+    }
+
+    public void setTotalBalance(BigDecimal totalBalance) {
+        this.totalBalance = totalBalance;
+    }
+
+    public BigDecimal getIncome() {
+        return income;
+    }
+
+    public void setIncome(BigDecimal income) {
+        this.income = income;
+    }
+
+    public BigDecimal getExpense() {
+        return expense;
+    }
+
+    public void setExpense(BigDecimal expense) {
+        this.expense = expense;
+    }
+
+    public BigDecimal getLargestTransaction() {
+        return largestTransaction;
+    }
+
+    public void setLargestTransaction(BigDecimal largestTransaction) {
+        this.largestTransaction = largestTransaction;
+    }
+
+    public BigDecimal getCrowdfundingDonations() {
+        return crowdfundingDonations;
+    }
+
+    public void setCrowdfundingDonations(BigDecimal crowdfundingDonations) {
+        this.crowdfundingDonations = crowdfundingDonations;
     }
 }
 
