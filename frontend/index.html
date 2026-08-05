@@ -36,9 +36,11 @@
             </button>
 
             <ul class="nav-links" id="navLinks">
+                <li><a href="#landing">Landing</a></li>
                 <li><a href="#workspace">Create Payment</a></li>
                 <li><a href="#payments">Transactions</a></li>
                 <li><a href="#details">Audit Trail</a></li>
+                <li><a href="#tickets">Tickets</a></li>
                 <li><a href="#datahub">Data Hub</a></li>
             </ul>
 
@@ -73,12 +75,89 @@
     </header>
 
     <main>
+        <section class="section container" id="landing" data-reveal>
+            <div class="section-heading">
+                <h2>Landing Page</h2>
+                <p>Select an existing user or create a new user profile to continue.</p>
+            </div>
+            <div class="details-grid">
+                <article class="card panel">
+                    <div class="panel-head">
+                        <h3>Select Existing User</h3>
+                        <small>Load user workspace</small>
+                    </div>
+                    <label class="field">
+                        <span>Existing users</span>
+                        <select id="landingExistingUserSelect"></select>
+                    </label>
+                    <div class="form-actions" style="margin-top:0.8rem;">
+                        <button class="btn btn-primary" id="continueExistingUserBtn" type="button">Continue</button>
+                    </div>
+                </article>
+
+                <article class="card panel">
+                    <div class="panel-head">
+                        <h3>Create New User</h3>
+                        <small>Profile onboarding</small>
+                    </div>
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Full Name</span>
+                            <input id="landingFullName" type="text" placeholder="John Carter">
+                        </label>
+                        <label class="field">
+                            <span>Email</span>
+                            <input id="landingEmail" type="email" placeholder="john@example.com">
+                        </label>
+                    </div>
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Phone Number</span>
+                            <input id="landingPhone" type="text" placeholder="+1 202 555 1234">
+                        </label>
+                        <label class="field">
+                            <span>Country</span>
+                            <input id="landingCountry" type="text" placeholder="USA">
+                        </label>
+                    </div>
+                    <label class="field">
+                        <span>Address</span>
+                        <input id="landingAddress" type="text" placeholder="Street / City">
+                    </label>
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Default Currency</span>
+                            <select id="landingDefaultCurrency">
+                                <option value="USD">USD</option>
+                                <option value="INR">INR</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Daily Transaction Limit</span>
+                            <input id="landingDailyLimit" type="number" min="1" step="0.01" value="5000">
+                        </label>
+                    </div>
+                    <div class="form-actions" style="margin-top:0.8rem;">
+                        <button class="btn btn-primary" id="createLandingUserBtn" type="button">Create User</button>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="section container" id="accountSelection" data-reveal>
+            <div class="section-heading">
+                <h2>Account Selection</h2>
+                <p>Select one account to continue. Dashboard and transactions are scoped to the selected user and account.</p>
+            </div>
+            <div id="accountSelectionList" class="hub-grid"></div>
+        </section>
+
         <!-- ── Hero / Create Payment ─────────────────────────────────────── -->
         <section class="hero container" id="workspace" data-reveal>
             <div class="hero-content card">
                 <p class="eyebrow">Payment Processing Dashboard</p>
                 <h1>Welcome back, build and track every payment with confidence.</h1>
-                <p class="hero-text">Create users, attach accounts to them, and then make payments from that user’s own accounts.</p>
+                <p class="hero-text">Manage payments, campaigns, accounts, and support workflows in one connected workspace.</p>
 
                 <div class="hero-metrics" id="kpiStrip">
                     <div class="metric-box">
@@ -111,6 +190,18 @@
                     <article class="card insight-card">
                         <p>Success Rate</p>
                         <h3 id="successRateValue">0%</h3>
+                    </article>
+                    <article class="card insight-card">
+                        <p>Average Transaction</p>
+                        <h3 id="averageTransactionValue">0.00</h3>
+                    </article>
+                    <article class="card insight-card">
+                        <p>Largest Transaction</p>
+                        <h3 id="largestTransactionValue">0.00</h3>
+                    </article>
+                    <article class="card insight-card">
+                        <p>Crowdfunding Donations</p>
+                        <h3 id="crowdfundingDonationValue">0.00</h3>
                     </article>
                 </div>
             </div>
@@ -164,11 +255,19 @@
                         </label>
                     </div>
 
-                    <label class="field">
-                        <span>Payment type</span>
-                        <select id="paymentType" required>
-                            <option value="REGULAR">REGULAR</option>
-                            <option value="CROWDFUNDING">CROWDFUNDING</option>
+                    <div class="segment-control" role="tablist" aria-label="Payment type">
+                        <button class="segment-btn active" type="button" id="paymentTypeRegular">Regular Payment</button>
+                        <button class="segment-btn" type="button" id="paymentTypeCrowdfunding">Crowdfunding</button>
+                    </div>
+                    <input id="paymentType" type="hidden" value="REGULAR">
+
+                    <label class="field" id="destinationCurrencyField">
+                        <span>Destination currency</span>
+                        <select id="destinationCurrencyCode" required>
+                            <option value="INR">INR</option>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
                         </select>
                     </label>
 
@@ -176,6 +275,17 @@
                         <span>Crowdfunding campaign</span>
                         <select id="crowdfundingCampaignId"></select>
                     </label>
+
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Reference</span>
+                            <input id="paymentReference" type="text" maxlength="64" placeholder="Optional reference">
+                        </label>
+                        <label class="field">
+                            <span>Description</span>
+                            <input id="paymentDescription" type="text" maxlength="160" placeholder="Optional payment note">
+                        </label>
+                    </div>
 
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">Create Payment</button>
@@ -194,10 +304,10 @@
                         <p>Selected User Wallets</p>
                         <span>Virtual</span>
                     </div>
-                    <h3 id="walletUserLabel">No user selected</h3>
+                    <h3 id="walletAccountNumber">No wallet selected</h3>
                     <p class="wallet-balance" id="walletBalanceValue">0.00</p>
                     <div class="wallet-footer">
-                        <span>Secure Payment Network</span>
+                        <span id="walletMeta">Currency - Status - Available</span>
                     </div>
                 </article>
 
@@ -254,7 +364,47 @@
                         <option value="FAILED">FAILED</option>
                     </select>
                 </label>
+                <label class="field">
+                    <span>Currency</span>
+                    <select id="paymentCurrencyFilter">
+                        <option value="ALL">ALL</option>
+                        <option value="USD">USD</option>
+                        <option value="INR">INR</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Payment type</span>
+                    <select id="paymentTypeFilter">
+                        <option value="ALL">ALL</option>
+                        <option value="NORMAL_PAYMENT">NORMAL_PAYMENT</option>
+                        <option value="CROWDFUNDING_PAYMENT">CROWDFUNDING_PAYMENT</option>
+                        <option value="REGULAR">REGULAR</option>
+                        <option value="CROWDFUNDING">CROWDFUNDING</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>From Date</span>
+                    <input id="paymentFromDate" type="date">
+                </label>
+                <label class="field">
+                    <span>To Date</span>
+                    <input id="paymentToDate" type="date">
+                </label>
+                <label class="field">
+                    <span>Source Account</span>
+                    <select id="paymentSourceAccountFilter">
+                        <option value="ALL">ALL</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Destination Account</span>
+                    <select id="paymentDestinationAccountFilter">
+                        <option value="ALL">ALL</option>
+                    </select>
+                </label>
                 <button class="btn btn-ghost" id="refreshPaymentsBtn">Refresh Payments</button>
+                <button class="btn btn-soft" id="exportCsvBtn">Export CSV</button>
+                <button class="btn btn-soft" id="exportPdfBtn">Export PDF</button>
             </div>
             <div class="table-wrap card">
                 <table class="payments-table">
@@ -354,6 +504,82 @@
                 </article>
             </div>
         </section>
+
+        <section class="section container" id="tickets" data-reveal>
+            <div class="section-heading">
+                <h2>Tickets</h2>
+                <p>Raise, search, filter, and update support tickets for the selected user and account.</p>
+            </div>
+            <div class="details-grid">
+                <article class="card panel">
+                    <div class="panel-head">
+                        <h3>Raise Ticket</h3>
+                        <small>Support request</small>
+                    </div>
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Reason</span>
+                            <select id="ticketReason">
+                                <option value="FAILED_PAYMENT">Failed Payment</option>
+                                <option value="WRONG_RECIPIENT">Wrong Recipient</option>
+                                <option value="DUPLICATE_PAYMENT">Duplicate Payment</option>
+                                <option value="DAILY_LIMIT_EXCEEDED">Daily Limit Exceeded</option>
+                                <option value="INSUFFICIENT_FUNDS">Insufficient Funds</option>
+                                <option value="CURRENCY_CONVERSION_ISSUE">Currency Conversion Issue</option>
+                                <option value="OTHER">Other</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Priority</span>
+                            <select id="ticketPriority">
+                                <option value="LOW">LOW</option>
+                                <option value="MEDIUM">MEDIUM</option>
+                                <option value="HIGH">HIGH</option>
+                                <option value="CRITICAL">CRITICAL</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="field">
+                        <span>Related Payment ID (optional)</span>
+                        <input id="ticketPaymentId" type="number" min="1">
+                    </label>
+                    <label class="field">
+                        <span>Title</span>
+                        <input id="ticketTitle" type="text" placeholder="Ticket title">
+                    </label>
+                    <label class="field">
+                        <span>Description</span>
+                        <input id="ticketDescription" type="text" placeholder="Describe the issue">
+                    </label>
+                    <div class="form-actions">
+                        <button class="btn btn-primary" id="raiseTicketBtn" type="button">Raise Ticket</button>
+                    </div>
+                </article>
+                <article class="card panel">
+                    <div class="panel-head">
+                        <h3>View Tickets</h3>
+                        <small>Search and filter</small>
+                    </div>
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Search</span>
+                            <input id="ticketSearch" type="search" placeholder="Ticket number or title">
+                        </label>
+                        <label class="field">
+                            <span>Status</span>
+                            <select id="ticketStatusFilter">
+                                <option value="ALL">ALL</option>
+                                <option value="OPEN">OPEN</option>
+                                <option value="IN_PROGRESS">IN_PROGRESS</option>
+                                <option value="RESOLVED">RESOLVED</option>
+                                <option value="CLOSED">CLOSED</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="ticketsListPanel" class="list-stack"></div>
+                </article>
+            </div>
+        </section>
     </main>
 
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
@@ -365,6 +591,17 @@
             <div class="dialog-actions">
                 <button value="cancel" class="btn btn-ghost">Cancel</button>
                 <button value="confirm" class="btn btn-primary" id="confirmActionBtn">Create</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="validationDialog">
+        <form method="dialog">
+            <h3>Validation Failed</h3>
+            <p id="validationMessage">Validation failed.</p>
+            <div class="dialog-actions">
+                <button value="close" class="btn btn-ghost">Close</button>
+                <button value="ticket" class="btn btn-primary" id="openTicketFromValidationBtn">Raise Ticket</button>
             </div>
         </form>
     </dialog>

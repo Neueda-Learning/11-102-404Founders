@@ -459,6 +459,33 @@ h1 {
     margin-bottom: 0.8rem;
 }
 
+.segment-control {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+    gap: 0.2rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.2rem;
+    margin-bottom: 0.8rem;
+}
+
+.segment-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-subtle);
+    border-radius: 10px;
+    padding: 0.58rem 0.72rem;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.segment-btn.active {
+    color: #fff;
+    background: var(--accent-grad);
+}
+
 .field-grid.two-col {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
 }
@@ -601,7 +628,7 @@ select:focus {
     padding: 0.9rem;
     margin-bottom: 0.9rem;
     display: grid;
-    grid-template-columns: 1fr 220px auto;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 0.8rem;
     align-items: end;
 }
@@ -870,6 +897,12 @@ select:focus {
     opacity: 0;
     transform: translateY(16px);
     transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+/* Fallback: avoid blank pages if reveal JS is interrupted. */
+body.is-loaded [data-reveal] {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 [data-reveal].visible {
