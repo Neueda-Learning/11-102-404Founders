@@ -1,4 +1,5 @@
 const API_BASE = (window.PAYMENT_API_BASE || window.localStorage.getItem("PAYMENT_API_BASE") || "http://localhost:8080").replace(/\/$/, "");
+const THEME_KEY = "PPS_THEME";
 
 const state = {
 	accounts: [],
@@ -10,16 +11,21 @@ const state = {
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
+	applySavedTheme();
 	requestAnimationFrame(() => document.body.classList.add("is-loaded"));
 	initNavbar();
+	initThemeToggle();
+	initProfileMenu();
 	initReveal();
 	initFormInteractions();
 	initFilters();
+	initQuickActions();
 	await bootstrapData();
 	hideLoadingScreen();
 });
 
 async function bootstrapData() {
+	setLoadingState(true);
 	try {
 		const [accounts, campaigns, payments, tickets] = await Promise.all([
 			fetchJson("/api/accounts"),
@@ -44,6 +50,10 @@ async function bootstrapData() {
 	renderPaymentsTable();
 	renderDataHub();
 	updateKpis();
+	updateDashboardSummary();
+	renderRecentTransactions();
+	renderSpendingCategories();
+	syncProfile();
 
 	if (state.payments.length > 0) {
 		await selectPayment(state.payments[0].id);
@@ -52,6 +62,7 @@ async function bootstrapData() {
 		document.getElementById("auditTimeline").innerHTML = "<li><small>No payment selected.</small></li>";
 		document.getElementById("ticketList").innerHTML = "<div class=\"ticket-item\"><p>No payment selected.</p></div>";
 	}
+	setLoadingState(false);
 }
 
 function initNavbar() {
@@ -82,6 +93,78 @@ function initNavbar() {
 	});
 }
 
+function initThemeToggle() {
+	const toggle = document.getElementById("themeToggle");
+	const label = document.getElementById("themeToggleLabel");
+
+	const updateLabel = () => {
+		label.textContent = document.body.getAttribute("data-theme") === "dark" ? "Dark" : "Light";
+	};
+
+	updateLabel();
+
+	toggle.addEventListener("click", () => {
+		const current = document.body.getAttribute("data-theme") || "light";
+		const next = current === "dark" ? "light" : "dark";
+		document.body.setAttribute("data-theme", next);
+		window.localStorage.setItem(THEME_KEY, next);
+		updateLabel();
+	});
+}
+
+function applySavedTheme() {
+	const saved = window.localStorage.getItem(THEME_KEY);
+	if (saved === "dark" || saved === "light") {
+		document.body.setAttribute("data-theme", saved);
+	}
+}
+
+function initProfileMenu() {
+	const root = document.getElementById("profileMenuRoot");
+	const trigger = document.getElementById("profileTrigger");
+	const dropdown = document.getElementById("profileDropdown");
+
+	trigger.addEventListener("click", () => {
+		const open = dropdown.hasAttribute("hidden");
+		if (open) {
+			dropdown.removeAttribute("hidden");
+			trigger.setAttribute("aria-expanded", "true");
+		} else {
+			dropdown.setAttribute("hidden", "hidden");
+			trigger.setAttribute("aria-expanded", "false");
+		}
+	});
+
+	document.addEventListener("click", (event) => {
+		if (!root.contains(event.target)) {
+			dropdown.setAttribute("hidden", "hidden");
+			trigger.setAttribute("aria-expanded", "false");
+		}
+	});
+
+	dropdown.querySelectorAll("button").forEach((btn) => {
+		btn.addEventListener("click", () => {
+			showToast("Profile", `${btn.textContent} action is UI-only in this demo.`, "warn");
+			dropdown.setAttribute("hidden", "hidden");
+			trigger.setAttribute("aria-expanded", "false");
+		});
+	});
+}
+
+function syncProfile() {
+	const profileName = document.getElementById("profileName");
+	const avatar = document.querySelector(".avatar");
+	if (state.accounts.length === 0) {
+		profileName.textContent = "Workspace User";
+		avatar.textContent = "U";
+		return;
+	}
+
+	const fallback = state.accounts[0].accountHolderName || "Workspace User";
+	profileName.textContent = fallback;
+	avatar.textContent = String(fallback).trim().charAt(0).toUpperCase() || "U";
+}
+
 function initReveal() {
 	const sections = document.querySelectorAll("[data-reveal]");
 	const observer = new IntersectionObserver(
@@ -96,6 +179,17 @@ function initReveal() {
 		{ threshold: 0.14 }
 	);
 	sections.forEach((section) => observer.observe(section));
+}
+
+function initQuickActions() {
+	document.getElementById("quickActionCreate").addEventListener("click", () => jumpTo("workspace"));
+	document.getElementById("quickActionTransactions").addEventListener("click", () => jumpTo("payments"));
+	document.getElementById("quickActionAudit").addEventListener("click", () => jumpTo("details"));
+	document.getElementById("quickActionDataHub").addEventListener("click", () => jumpTo("datahub"));
+}
+
+function jumpTo(sectionId) {
+	document.getElementById(sectionId).scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function initFormInteractions() {
@@ -414,6 +508,72 @@ function updateKpis() {
 	animateKpi(document.querySelector("[data-kpi='failed']"), failed);
 }
 
+function updateDashboardSummary() {
+	const totalBalance = state.accounts.reduce((sum, account) => sum + Number(account.balance || 0), 0);
+	const completedIncome = state.payments
+		.filter((payment) => payment.status === "COMPLETED" || payment.status === "SUCCESS")
+		.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+	const failedExpense = state.payments
+		.filter((payment) => payment.status === "FAILED")
+		.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+	const total = state.payments.length;
+	const successRate = total === 0 ? 0 : Math.round((state.payments.filter((payment) => payment.status === "COMPLETED" || payment.status === "SUCCESS").length / total) * 100);
+
+	document.getElementById("totalBalanceValue").textContent = formatAmount(totalBalance);
+	document.getElementById("incomeValue").textContent = formatAmount(completedIncome);
+	document.getElementById("expenseValue").textContent = formatAmount(failedExpense);
+	document.getElementById("successRateValue").textContent = `${successRate}%`;
+	document.getElementById("walletBalanceValue").textContent = `USD ${formatAmount(totalBalance)}`;
+}
+
+function renderRecentTransactions() {
+	const list = document.getElementById("recentTransactionsList");
+	const recent = [...state.payments]
+		.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+		.slice(0, 5);
+
+	if (recent.length === 0) {
+		list.innerHTML = "<article class=\"stack-item\"><strong>No transactions yet</strong><p>Create your first payment to see activity.</p></article>";
+		return;
+	}
+
+	list.innerHTML = recent
+		.map((payment) => `
+			<article class="stack-item">
+				<strong>${payment.paymentReference || `Payment ${payment.id}`}</strong>
+				<p>${payment.currencyCode} ${formatAmount(payment.amount)} | ${payment.status}</p>
+			</article>
+		`)
+		.join("");
+}
+
+function renderSpendingCategories() {
+	const list = document.getElementById("spendingCategoryList");
+	const groups = state.payments.reduce((acc, payment) => {
+		const key = payment.paymentType || "NORMAL_PAYMENT";
+		if (!acc[key]) {
+			acc[key] = 0;
+		}
+		acc[key] += Number(payment.amount || 0);
+		return acc;
+	}, {});
+
+	const entries = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+	if (entries.length === 0) {
+		list.innerHTML = "<article class=\"stack-item\"><strong>No categories yet</strong><p>Categories will appear as payments are created.</p></article>";
+		return;
+	}
+
+	list.innerHTML = entries
+		.map(([type, amount]) => `
+			<article class="stack-item">
+				<strong>${type}</strong>
+				<p>Total ${formatAmount(amount)}</p>
+			</article>
+		`)
+		.join("");
+}
+
 function animateKpi(element, target) {
 	if (!element) {
 		return;
@@ -436,10 +596,14 @@ function animateKpi(element, target) {
 }
 
 async function refreshPaymentsOnly(selectIdAfter) {
+	setLoadingState(true);
 	try {
 		state.payments = await fetchJson("/api/payments");
 		renderPaymentsTable();
 		updateKpis();
+		updateDashboardSummary();
+		renderRecentTransactions();
+		renderSpendingCategories();
 
 		if (state.payments.length > 0) {
 			const selected = selectIdAfter || state.payments[0].id;
@@ -449,6 +613,7 @@ async function refreshPaymentsOnly(selectIdAfter) {
 	} catch (error) {
 		showToast("Refresh failed", extractErrorMessage(error), "error");
 	}
+	setLoadingState(false);
 }
 
 async function fetchJson(path, options) {
@@ -478,7 +643,11 @@ async function fetchJson(path, options) {
 
 function hideLoadingScreen() {
 	const loadingScreen = document.getElementById("loadingScreen");
-	window.setTimeout(() => loadingScreen.classList.add("hidden"), 600);
+	window.setTimeout(() => loadingScreen.classList.add("hidden"), 450);
+}
+
+function setLoadingState(isLoading) {
+	document.body.classList.toggle("is-busy", Boolean(isLoading));
 }
 
 function formatAmount(value) {
@@ -516,4 +685,3 @@ function extractErrorMessage(error) {
 	}
 	return "Unexpected error from API.";
 }
-
