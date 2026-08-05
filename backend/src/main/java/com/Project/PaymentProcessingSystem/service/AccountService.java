@@ -70,6 +70,19 @@ public class AccountService {
         if (updatedAccount.getAccountStatus() != null) {
             existingAccount.setAccountStatus(updatedAccount.getAccountStatus());
         }
+        if (updatedAccount.getMaxDailyLimit() != null) {
+            existingAccount.setMaxDailyLimit(updatedAccount.getMaxDailyLimit());
+        }
+        // Allow updating bank details so accounts created without them can still be used
+        if (updatedAccount.getAccountNumber() != null) {
+            existingAccount.setAccountNumber(updatedAccount.getAccountNumber());
+        }
+        if (updatedAccount.getBankName() != null) {
+            existingAccount.setBankName(updatedAccount.getBankName());
+        }
+        if (updatedAccount.getBankIfsc() != null) {
+            existingAccount.setBankIfsc(updatedAccount.getBankIfsc());
+        }
 
         return accountRepository.save(existingAccount);
     }
