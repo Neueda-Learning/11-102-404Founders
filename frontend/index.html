@@ -57,7 +57,7 @@
                         <span class="avatar" aria-hidden="true">U</span>
                         <span class="profile-meta">
                             <strong id="profileName">Workspace User</strong>
-                            <small>Payments Team</small>
+                            <small id="profileSubtext">Payments Team</small>
                         </span>
                         <span class="profile-caret" aria-hidden="true">▼</span>
                     </button>
@@ -73,11 +73,12 @@
     </header>
 
     <main>
+        <!-- ── Hero / Create Payment ─────────────────────────────────────── -->
         <section class="hero container" id="workspace" data-reveal>
             <div class="hero-content card">
                 <p class="eyebrow">Payment Processing Dashboard</p>
                 <h1>Welcome back, build and track every payment with confidence.</h1>
-                <p class="hero-text">This workspace remains fully connected to your existing Spring Boot endpoints while giving you a cleaner fintech-style UI.</p>
+                <p class="hero-text">Create users, attach accounts to them, and then make payments from that user’s own accounts.</p>
 
                 <div class="hero-metrics" id="kpiStrip">
                     <div class="metric-box">
@@ -96,7 +97,7 @@
 
                 <div class="insight-grid">
                     <article class="card insight-card">
-                        <p>Total Balance</p>
+                        <p>Selected User Balance</p>
                         <h3 id="totalBalanceValue">0.00</h3>
                     </article>
                     <article class="card insight-card">
@@ -119,10 +120,26 @@
                     <h2>Create Payment</h2>
                     <small>POST /api/payments</small>
                 </div>
+
+                <div class="field-grid two-col" style="margin-bottom: 1rem;">
+                    <label class="field">
+                        <span>Selected user</span>
+                        <select id="selectedUserId"></select>
+                    </label>
+                    <div class="field" style="justify-content: flex-end;">
+                        <span>User actions</span>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <button type="button" class="btn btn-soft" id="addUserBtn">+ Add User</button>
+                            <button type="button" class="btn btn-soft" id="quickAddAccountBtn">+ Add Account</button>
+                        </div>
+                    </div>
+                </div>
+                <p class="inline-note" id="selectedUserHint">Select a user first. Payments will debit only from that user's own accounts.</p>
+
                 <form id="paymentForm" novalidate>
                     <div class="field-grid two-col">
                         <label class="field">
-                            <span>Source account</span>
+                            <span>Source account (selected user's accounts)</span>
                             <select id="sourceAccountId" required></select>
                         </label>
                         <label class="field">
@@ -131,36 +148,27 @@
                         </label>
                     </div>
 
-                    <div class="field-grid three-col">
+                    <div class="field-grid two-col">
                         <label class="field">
                             <span>Amount</span>
                             <input id="amount" type="number" min="0.01" step="0.01" required>
                         </label>
                         <label class="field">
-                            <span>Currency</span>
+                            <span>Currency (must match source account)</span>
                             <select id="currencyCode" required>
+                                <option value="INR">INR</option>
                                 <option value="USD">USD</option>
                                 <option value="EUR">EUR</option>
                                 <option value="GBP">GBP</option>
-                                <option value="INR">INR</option>
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>Payment type</span>
-                            <select id="paymentType" required>
-                                <option value="NORMAL_PAYMENT">NORMAL_PAYMENT</option>
-                                <option value="CROWDFUNDING_PAYMENT">CROWDFUNDING_PAYMENT</option>
                             </select>
                         </label>
                     </div>
 
                     <label class="field">
-                        <span>Destination currency</span>
-                        <select id="destinationCurrencyCode" required>
-                            <option value="INR">INR</option>
-                            <option value="USD">USD</option>
-                            <option value="EUR">EUR</option>
-                            <option value="GBP">GBP</option>
+                        <span>Payment type</span>
+                        <select id="paymentType" required>
+                            <option value="REGULAR">REGULAR</option>
+                            <option value="CROWDFUNDING">CROWDFUNDING</option>
                         </select>
                     </label>
 
@@ -174,19 +182,20 @@
                         <button type="button" class="btn btn-ghost" id="resetPaymentFormBtn">Reset</button>
                     </div>
                 </form>
-                <p class="inline-note">Validation follows backend rules: supported currency, positive amount, max amount, active accounts, and matching account currency.</p>
+                <p class="inline-note">The source account must belong to the selected user. On success, the source balance is debited and the destination balance is credited automatically.</p>
             </div>
         </section>
 
+        <!-- ── Dashboard cards ───────────────────────────────────────────── -->
         <section class="section container" data-reveal>
             <div class="dashboard-grid">
                 <article class="card wallet-card">
                     <div class="wallet-top">
-                        <p>Primary Wallet</p>
+                        <p>Selected User Wallets</p>
                         <span>Virtual</span>
                     </div>
-                    <h3>**** **** **** 2804</h3>
-                    <p class="wallet-balance" id="walletBalanceValue">USD 0.00</p>
+                    <h3 id="walletUserLabel">No user selected</h3>
+                    <p class="wallet-balance" id="walletBalanceValue">0.00</p>
                     <div class="wallet-footer">
                         <span>Secure Payment Network</span>
                     </div>
@@ -223,6 +232,7 @@
             </div>
         </section>
 
+        <!-- ── Payment Monitor ───────────────────────────────────────────── -->
         <section class="section container" id="payments" data-reveal>
             <div class="section-heading">
                 <h2>Payment Monitor</h2>
@@ -231,21 +241,17 @@
             <div class="toolbar card">
                 <label class="field">
                     <span>Search payment reference</span>
-                    <input id="paymentSearch" type="search" placeholder="PAY-20260803-0004">
+                    <input id="paymentSearch" type="search" placeholder="PAY-20260805-XXXXXXXX">
                 </label>
                 <label class="field">
                     <span>Status</span>
                     <select id="paymentStatusFilter">
                         <option value="ALL">ALL</option>
-                        <option value="INITIATED">INITIATED</option>
-                        <option value="PROCESSING">PROCESSING</option>
-                        <option value="SUCCESS">SUCCESS</option>
                         <option value="CREATED">CREATED</option>
                         <option value="VALIDATED">VALIDATED</option>
                         <option value="SENT">SENT</option>
                         <option value="COMPLETED">COMPLETED</option>
                         <option value="FAILED">FAILED</option>
-                        <option value="CANCELLED">CANCELLED</option>
                     </select>
                 </label>
                 <button class="btn btn-ghost" id="refreshPaymentsBtn">Refresh Payments</button>
@@ -255,7 +261,7 @@
                     <thead>
                         <tr>
                             <th>Reference</th>
-                            <th>Source -> Destination</th>
+                            <th>Source → Destination</th>
                             <th>Amount</th>
                             <th>Type</th>
                             <th>Status</th>
@@ -271,6 +277,7 @@
             </div>
         </section>
 
+        <!-- ── Payment Detail + Audit + Tickets ─────────────────────────── -->
         <section class="section container" id="details" data-reveal>
             <div class="section-heading">
                 <h2>Selected Payment Details</h2>
@@ -283,6 +290,11 @@
                         <small id="selectedPaymentReference">Select a payment row</small>
                     </div>
                     <div class="kv-grid" id="paymentSnapshot"></div>
+                    <div id="statusActions" style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;" hidden>
+                        <button class="btn btn-primary" id="markCompletedBtn">Mark COMPLETED</button>
+                        <button class="btn btn-ghost" id="markFailedBtn" style="color:var(--danger)">Mark FAILED</button>
+                        <button class="btn btn-ghost" id="cancelPaymentBtn">Cancel</button>
+                    </div>
                 </article>
                 <article class="card panel">
                     <div class="panel-head">
@@ -301,18 +313,30 @@
             </div>
         </section>
 
+        <!-- ── Data Hub ──────────────────────────────────────────────────── -->
         <section class="section container" id="datahub" data-reveal>
             <div class="section-heading">
                 <h2>Data Hub</h2>
-                <p>Supporting entities from your schema used in payment workflows.</p>
+                <p>Users, their accounts, campaigns, and operational tickets.</p>
             </div>
             <div class="hub-grid">
                 <article class="card panel">
                     <div class="panel-head">
-                        <h3>Accounts</h3>
-                        <small id="accountsCount">0</small>
+                        <h3>Selected User Accounts</h3>
+                        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                            <small id="accountsCount">0</small>
+                            <button class="btn btn-soft" id="addAccountBtn" style="padding:0.25rem 0.75rem;font-size:0.8rem;">+ Add Account</button>
+                            <button class="btn btn-soft" id="addUserBtnDataHub" style="padding:0.25rem 0.75rem;font-size:0.8rem;">+ Add User</button>
+                        </div>
                     </div>
                     <div id="accountsList" class="list-stack"></div>
+                </article>
+                <article class="card panel">
+                    <div class="panel-head">
+                        <h3>Users</h3>
+                        <small id="usersCount">0</small>
+                    </div>
+                    <div id="usersList" class="list-stack"></div>
                 </article>
                 <article class="card panel">
                     <div class="panel-head">
@@ -341,6 +365,84 @@
             <div class="dialog-actions">
                 <button value="cancel" class="btn btn-ghost">Cancel</button>
                 <button value="confirm" class="btn btn-primary" id="confirmActionBtn">Create</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="addUserDialog">
+        <form method="dialog" id="addUserForm" novalidate>
+            <h3>Create User</h3>
+            <div class="field-grid two-col" style="margin-top:1rem;">
+                <label class="field">
+                    <span>Full name *</span>
+                    <input type="text" id="newUserName" placeholder="e.g. Ragul Kumar" required>
+                </label>
+                <label class="field">
+                    <span>Email *</span>
+                    <input type="email" id="newUserEmail" placeholder="ragul@example.com" required>
+                </label>
+            </div>
+            <p id="addUserError" style="color:var(--danger);font-size:0.85rem;margin-top:0.5rem;display:none;"></p>
+            <div class="dialog-actions" style="margin-top:1rem;">
+                <button type="button" class="btn btn-ghost" id="cancelAddUserBtn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitAddUserBtn">Create User</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="addAccountDialog">
+        <form method="dialog" id="addAccountForm" novalidate>
+            <h3>Add Account for Selected User</h3>
+            <p id="addAccountSelectedUser" class="inline-note" style="margin-top:0.5rem;">No user selected.</p>
+            <div class="field-grid two-col" style="margin-top:1rem;">
+                <label class="field">
+                    <span>Account holder name</span>
+                    <input type="text" id="newAccountName" placeholder="Leave blank to use user name">
+                </label>
+                <label class="field">
+                    <span>Currency *</span>
+                    <select id="newAccountCurrency" required>
+                        <option value="INR">INR</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                    </select>
+                </label>
+            </div>
+            <div class="field-grid two-col" style="margin-top:0.5rem;">
+                <label class="field">
+                    <span>Initial balance *</span>
+                    <input type="number" id="newAccountBalance" min="0" step="0.01" placeholder="0.00" required>
+                </label>
+                <label class="field">
+                    <span>Daily limit</span>
+                    <input type="number" id="newAccountDailyLimit" min="0" step="0.01" placeholder="50000.00">
+                </label>
+            </div>
+            <div class="field-grid two-col" style="margin-top:0.5rem;">
+                <label class="field">
+                    <span>Account number</span>
+                    <input type="text" id="newAccountNumber" placeholder="Optional account number">
+                </label>
+                <label class="field">
+                    <span>Bank name</span>
+                    <input type="text" id="newAccountBankName" placeholder="Optional bank name">
+                </label>
+            </div>
+            <div class="field-grid two-col" style="margin-top:0.5rem;">
+                <label class="field">
+                    <span>IFSC / routing code</span>
+                    <input type="text" id="newAccountBankIfsc" placeholder="Optional IFSC">
+                </label>
+                <label class="field" style="flex-direction:row;align-items:center;gap:0.5rem;justify-content:flex-start;">
+                    <input type="checkbox" id="newAccountIsBucket">
+                    <span>Bucket account (for crowdfunding)</span>
+                </label>
+            </div>
+            <p id="addAccountError" style="color:var(--danger);font-size:0.85rem;margin-top:0.5rem;display:none;"></p>
+            <div class="dialog-actions" style="margin-top:1rem;">
+                <button type="button" class="btn btn-ghost" id="cancelAddAccountBtn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitAddAccountBtn">Create Account</button>
             </div>
         </form>
     </dialog>

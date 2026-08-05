@@ -19,33 +19,36 @@ import java.util.List;
 @RequestMapping("/api/users")
 public class UserController {
 
-    private final UserService userService;
-    private final AccountService accountService;
+	private final UserService userService;
+	private final AccountService accountService;
 
-    public UserController(UserService userService, AccountService accountService) {
-        this.userService = userService;
-        this.accountService = accountService;
-    }
+	public UserController(UserService userService, AccountService accountService) {
+		this.userService = userService;
+		this.accountService = accountService;
+	}
 
-    @GetMapping
-    public List<User> getAllUsers() {
-        return userService.getAllUsers();
-    }
+	@GetMapping
+	public List<User> getAllUsers() {
+		return userService.getAllUsers();
+	}
 
-    @GetMapping("/{id}")
-    public User getUserById(@PathVariable Long id) {
-        return userService.getUserById(id);
-    }
+	@GetMapping("/{id}")
+	public User getUserById(@PathVariable Long id) {
+		return userService.getUserById(id);
+	}
 
-    @GetMapping("/{id}/accounts")
-    public List<Account> getUserAccounts(@PathVariable Long id) {
-        userService.getUserById(id);
-        return accountService.getAccountsByUserId(id);
-    }
+	@PostMapping
+	public ResponseEntity<User> createUser(@RequestBody User user) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(user));
+	}
 
-    @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody User user) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(user));
-    }
+	@GetMapping("/{id}/accounts")
+	public List<Account> getUserAccounts(@PathVariable Long id) {
+		return accountService.getAccountsByUserId(id);
+	}
+
+	@PostMapping("/{id}/accounts")
+	public ResponseEntity<Account> createUserAccount(@PathVariable Long id, @RequestBody Account account) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(accountService.createAccountForUser(id, account));
+	}
 }
-
