@@ -1,0 +1,71 @@
+package com.Project.PaymentProcessingSystem.model;
+
+import java.math.BigDecimal;
+
+public class DashboardAnalyticsResponse {
+
+    private long totalPayments;
+    private long successfulPayments;
+    private long failedPayments;
+    private long pendingPayments;
+    private BigDecimal successPercentage;
+    private BigDecimal totalAmountProcessed;
+    private BigDecimal averageTransactionAmount;
+
+    public long getTotalPayments() {
+        return totalPayments;
+    }
+
+    public void setTotalPayments(long totalPayments) {
+        this.totalPayments = totalPayments;
+    }
+
+    public long getSuccessfulPayments() {
+        return successfulPayments;
+    }
+
+    public void setSuccessfulPayments(long successfulPayments) {
+        this.successfulPayments = successfulPayments;
+    }
+
+    public long getFailedPayments() {
+        return failedPayments;
+    }
+
+    public void setFailedPayments(long failedPayments) {
+        this.failedPayments = failedPayments;
+    }
+
+    public long getPendingPayments() {
+        return pendingPayments;
+    }
+
+    public void setPendingPayments(long pendingPayments) {
+        this.pendingPayments = pendingPayments;
+    }
+
+    public BigDecimal getSuccessPercentage() {
+        return successPercentage;
+    }
+
+    public void setSuccessPercentage(BigDecimal successPercentage) {
+        this.successPercentage = successPercentage;
+    }
+
+    public BigDecimal getTotalAmountProcessed() {
+        return totalAmountProcessed;
+    }
+
+    public void setTotalAmountProcessed(BigDecimal totalAmountProcessed) {
+        this.totalAmountProcessed = totalAmountProcessed;
+    }
+
+    public BigDecimal getAverageTransactionAmount() {
+        return averageTransactionAmount;
+    }
+
+    public void setAverageTransactionAmount(BigDecimal averageTransactionAmount) {
+        this.averageTransactionAmount = averageTransactionAmount;
+    }
+}
+

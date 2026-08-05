@@ -25,6 +25,15 @@ public class CrowdfundingCampaign {
     @Column(name = "campaign_name", nullable = false)
     private String campaignName;
 
+    @Column(name = "description")
+    private String description;
+
+    @Column(name = "donation_category", length = 120)
+    private String donationCategory;
+
+    @Column(name = "donation_options")
+    private String donationOptions;
+
     @Column(name = "bucket_account_id", nullable = false)
     private Long bucketAccountId;
 
@@ -64,6 +73,30 @@ public class CrowdfundingCampaign {
 
     public void setCampaignName(String campaignName) {
         this.campaignName = campaignName;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getDonationCategory() {
+        return donationCategory;
+    }
+
+    public void setDonationCategory(String donationCategory) {
+        this.donationCategory = donationCategory;
+    }
+
+    public String getDonationOptions() {
+        return donationOptions;
+    }
+
+    public void setDonationOptions(String donationOptions) {
+        this.donationOptions = donationOptions;
     }
 
     public Long getBucketAccountId() {

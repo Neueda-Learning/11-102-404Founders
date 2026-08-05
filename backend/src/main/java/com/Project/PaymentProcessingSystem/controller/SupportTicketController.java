@@ -1,7 +1,9 @@
 package com.Project.PaymentProcessingSystem.controller;
 
+import com.Project.PaymentProcessingSystem.model.DisputeTicketRequest;
 import com.Project.PaymentProcessingSystem.model.SupportTicket;
 import com.Project.PaymentProcessingSystem.model.TicketStatus;
+import com.Project.PaymentProcessingSystem.model.TicketType;
 import com.Project.PaymentProcessingSystem.service.SupportTicketService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,12 +30,20 @@ public class SupportTicketController {
 
     @GetMapping
     public List<SupportTicket> getTickets(@RequestParam(required = false) TicketStatus status,
-                                          @RequestParam(required = false) Long paymentId) {
+                                          @RequestParam(required = false) Long paymentId,
+                                          @RequestParam(required = false) Long userId,
+                                          @RequestParam(required = false) TicketType type) {
         if (status != null) {
             return supportTicketService.getTicketsByStatus(status);
         }
         if (paymentId != null) {
             return supportTicketService.getTicketsByPaymentId(paymentId);
+        }
+        if (userId != null) {
+            return supportTicketService.getTicketsByUserId(userId);
+        }
+        if (type != null) {
+            return supportTicketService.getTicketsByType(type);
         }
         return supportTicketService.getAllTickets();
     }
@@ -46,6 +56,12 @@ public class SupportTicketController {
     @PostMapping
     public ResponseEntity<SupportTicket> createTicket(@RequestBody SupportTicket ticket) {
         SupportTicket created = supportTicketService.createTicket(ticket);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PostMapping("/disputes")
+    public ResponseEntity<SupportTicket> createDisputeTicket(@RequestBody DisputeTicketRequest request) {
+        SupportTicket created = supportTicketService.createDisputeTicket(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 

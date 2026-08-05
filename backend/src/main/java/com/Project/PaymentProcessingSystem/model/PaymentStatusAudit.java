@@ -31,6 +31,13 @@ public class PaymentStatusAudit {
     @Column(name = "to_status", nullable = false, length = 50)
     private PaymentStatus toStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 50)
+    private PaymentStatus status;
+
+    @Column(name = "description")
+    private String description;
+
     @Column(name = "changed_at")
     private LocalDateTime changedAt;
 
@@ -55,6 +62,12 @@ public class PaymentStatusAudit {
 
     public PaymentStatus getToStatus() { return toStatus; }
     public void setToStatus(PaymentStatus toStatus) { this.toStatus = toStatus; }
+
+    public PaymentStatus getStatus() { return status; }
+    public void setStatus(PaymentStatus status) { this.status = status; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
     public LocalDateTime getChangedAt() { return changedAt; }
     public void setChangedAt(LocalDateTime changedAt) { this.changedAt = changedAt; }

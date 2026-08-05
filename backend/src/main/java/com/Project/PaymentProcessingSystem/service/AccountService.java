@@ -43,6 +43,23 @@ public class AccountService {
         return accountRepository.save(account);
     }
 
+    public List<Account> getAccountsByUserId(Long userId) {
+        return accountRepository.findByUser_Id(userId);
+    }
+
+    public void validateAccountOwnedByUser(Account account, Long userId) {
+        if (userId == null) {
+            return;
+        }
+        if (account.getUser() == null || account.getUser().getId() == null || !userId.equals(account.getUser().getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source account does not belong to the provided user");
+        }
+    }
+
+    public Account save(Account account) {
+        return accountRepository.save(account);
+    }
+
     public Account updateAccount(Long id, Account updatedAccount) {
         Account existingAccount = getAccountById(id);
 

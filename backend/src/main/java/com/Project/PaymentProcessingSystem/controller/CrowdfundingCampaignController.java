@@ -1,7 +1,10 @@
 package com.Project.PaymentProcessingSystem.controller;
 
+import com.Project.PaymentProcessingSystem.model.CampaignContributionRequest;
 import com.Project.PaymentProcessingSystem.model.CampaignStatus;
+import com.Project.PaymentProcessingSystem.model.CampaignTrackingResponse;
 import com.Project.PaymentProcessingSystem.model.CrowdfundingCampaign;
+import com.Project.PaymentProcessingSystem.model.Payment;
 import com.Project.PaymentProcessingSystem.service.CrowdfundingCampaignService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +45,18 @@ public class CrowdfundingCampaignController {
     public ResponseEntity<CrowdfundingCampaign> createCampaign(@RequestBody CrowdfundingCampaign campaign) {
         CrowdfundingCampaign created = campaignService.createCampaign(campaign);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PostMapping("/{id}/contribute")
+    public ResponseEntity<Payment> contributeToCampaign(@PathVariable Long id,
+                                                        @RequestBody CampaignContributionRequest request) {
+        Payment created = campaignService.contributeToCampaign(id, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @GetMapping("/{id}/tracking")
+    public CampaignTrackingResponse getCampaignTracking(@PathVariable Long id) {
+        return campaignService.getCampaignTracking(id);
     }
 }
 

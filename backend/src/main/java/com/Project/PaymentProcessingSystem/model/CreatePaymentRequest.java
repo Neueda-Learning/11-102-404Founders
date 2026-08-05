@@ -8,8 +8,13 @@ public class CreatePaymentRequest {
     private Long destinationAccountId;
     private BigDecimal amount;
     private String currencyCode;
+    private String destinationCurrencyCode;
     private PaymentType paymentType;
     private Long crowdfundingCampaignId;
+    private String idempotencyKey;
+    private Long userId;
+    private String sourceAccountNumber;
+    private String destinationAccountNumber;
 
     public CreatePaymentRequest() {
     }
@@ -46,6 +51,14 @@ public class CreatePaymentRequest {
         this.currencyCode = currencyCode;
     }
 
+    public String getDestinationCurrencyCode() {
+        return destinationCurrencyCode;
+    }
+
+    public void setDestinationCurrencyCode(String destinationCurrencyCode) {
+        this.destinationCurrencyCode = destinationCurrencyCode;
+    }
+
     public PaymentType getPaymentType() {
         return paymentType;
     }
@@ -60,6 +73,38 @@ public class CreatePaymentRequest {
 
     public void setCrowdfundingCampaignId(Long crowdfundingCampaignId) {
         this.crowdfundingCampaignId = crowdfundingCampaignId;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public String getSourceAccountNumber() {
+        return sourceAccountNumber;
+    }
+
+    public void setSourceAccountNumber(String sourceAccountNumber) {
+        this.sourceAccountNumber = sourceAccountNumber;
+    }
+
+    public String getDestinationAccountNumber() {
+        return destinationAccountNumber;
+    }
+
+    public void setDestinationAccountNumber(String destinationAccountNumber) {
+        this.destinationAccountNumber = destinationAccountNumber;
     }
 }
 

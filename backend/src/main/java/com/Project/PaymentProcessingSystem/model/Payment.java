@@ -36,6 +36,9 @@ public class Payment {
     @Column(name = "currency_code", nullable = false, length = 3)
     private String currencyCode;
 
+    @Column(name = "destination_currency_code", nullable = false, length = 3)
+    private String destinationCurrencyCode;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_type", nullable = false)
     private PaymentType paymentType = PaymentType.REGULAR;
@@ -49,6 +52,15 @@ public class Payment {
 
     @Column(name = "error_code", length = 50)
     private String errorCode;
+
+    @Column(name = "idempotency_key", length = 120)
+    private String idempotencyKey;
+
+    @Column(name = "forex_fee", precision = 15, scale = 2)
+    private BigDecimal forexFee;
+
+    @Column(name = "converted_amount", precision = 15, scale = 2)
+    private BigDecimal convertedAmount;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -76,6 +88,9 @@ public class Payment {
     public String getCurrencyCode() { return currencyCode; }
     public void setCurrencyCode(String currencyCode) { this.currencyCode = currencyCode; }
 
+    public String getDestinationCurrencyCode() { return destinationCurrencyCode; }
+    public void setDestinationCurrencyCode(String destinationCurrencyCode) { this.destinationCurrencyCode = destinationCurrencyCode; }
+
     public PaymentType getPaymentType() { return paymentType; }
     public void setPaymentType(PaymentType paymentType) { this.paymentType = paymentType; }
 
@@ -87,6 +102,15 @@ public class Payment {
 
     public String getErrorCode() { return errorCode; }
     public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
+
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+
+    public BigDecimal getForexFee() { return forexFee; }
+    public void setForexFee(BigDecimal forexFee) { this.forexFee = forexFee; }
+
+    public BigDecimal getConvertedAmount() { return convertedAmount; }
+    public void setConvertedAmount(BigDecimal convertedAmount) { this.convertedAmount = convertedAmount; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

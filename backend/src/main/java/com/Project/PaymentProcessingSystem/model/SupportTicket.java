@@ -29,6 +29,9 @@ public class SupportTicket {
     @Column(name = "account_id", nullable = false)
     private Long accountId;
 
+    @Column(name = "user_id")
+    private Long userId;
+
     @Column(name = "title", nullable = false)
     private String title;
 
@@ -42,6 +45,20 @@ public class SupportTicket {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private TicketStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ticket_type", nullable = false)
+    private TicketType ticketType = TicketType.GENERAL;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dispute_role")
+    private DisputeRole disputeRole = DisputeRole.NONE;
+
+    @Column(name = "failure_reason")
+    private String failureReason;
+
+    @Column(name = "recovery_requested")
+    private Boolean recoveryRequested;
 
     @Column(name = "resolution_summary")
     private String resolutionSummary;
@@ -84,6 +101,14 @@ public class SupportTicket {
         this.accountId = accountId;
     }
 
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
     public String getTitle() {
         return title;
     }
@@ -114,6 +139,38 @@ public class SupportTicket {
 
     public void setStatus(TicketStatus status) {
         this.status = status;
+    }
+
+    public TicketType getTicketType() {
+        return ticketType;
+    }
+
+    public void setTicketType(TicketType ticketType) {
+        this.ticketType = ticketType;
+    }
+
+    public DisputeRole getDisputeRole() {
+        return disputeRole;
+    }
+
+    public void setDisputeRole(DisputeRole disputeRole) {
+        this.disputeRole = disputeRole;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
+    }
+
+    public void setFailureReason(String failureReason) {
+        this.failureReason = failureReason;
+    }
+
+    public Boolean getRecoveryRequested() {
+        return recoveryRequested;
+    }
+
+    public void setRecoveryRequested(Boolean recoveryRequested) {
+        this.recoveryRequested = recoveryRequested;
     }
 
     public String getResolutionSummary() {

@@ -3,9 +3,251 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Processing System</title>
+    <title>Payment Processing System Workspace</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    
+    <div class="loading-screen" id="loadingScreen" aria-hidden="true">
+        <div class="loader-orb"></div>
+        <p>Loading payment workspace...</p>
+    </div>
+
+    <div class="background-glow" aria-hidden="true"></div>
+
+    <header class="site-header" id="siteHeader">
+        <nav class="navbar container" aria-label="Main navigation">
+            <a class="brand" href="#workspace">404<span>Founders</span></a>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="#workspace">Create Payment</a></li>
+                <li><a href="#payments">Payment Monitor</a></li>
+                <li><a href="#details">Audit Trail</a></li>
+                <li><a href="#datahub">Data Hub</a></li>
+            </ul>
+            <button class="btn btn-ghost" id="refreshAllBtn">Refresh Data</button>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero container" id="workspace" data-reveal>
+            <div class="hero-content glass">
+                <p class="eyebrow">Payment Processing System</p>
+                <h1>Create and track payments as the primary workflow</h1>
+                <p class="hero-text">This UI is mapped to your backend endpoints and schema: accounts, campaigns, payments, status audit, and support tickets.</p>
+                <div class="hero-metrics" id="kpiStrip">
+                    <div>
+                        <p class="metric-label">Payments</p>
+                        <p class="metric-value" data-kpi="payments">0</p>
+                    </div>
+                    <div>
+                        <p class="metric-label">Completed</p>
+                        <p class="metric-value" data-kpi="completed">0</p>
+                    </div>
+                    <div>
+                        <p class="metric-label">Failed</p>
+                        <p class="metric-value" data-kpi="failed">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-form glass">
+                <div class="panel-head">
+                    <h2>Create Payment</h2>
+                    <small>POST /api/payments</small>
+                </div>
+                <form id="paymentForm" novalidate>
+                    <div class="field-grid two-col">
+                        <label class="field">
+                            <span>Source account</span>
+                            <select id="sourceAccountId" required></select>
+                        </label>
+                        <label class="field">
+                            <span>Destination account</span>
+                            <select id="destinationAccountId" required></select>
+                        </label>
+                    </div>
+
+                    <div class="field-grid three-col">
+                        <label class="field">
+                            <span>Amount</span>
+                            <input id="amount" type="number" min="0.01" step="0.01" required>
+                        </label>
+                        <label class="field">
+                            <span>Currency</span>
+                            <select id="currencyCode" required>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                                <option value="GBP">GBP</option>
+                                <option value="INR">INR</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Payment type</span>
+                            <select id="paymentType" required>
+                                <option value="NORMAL_PAYMENT">NORMAL_PAYMENT</option>
+                                <option value="CROWDFUNDING_PAYMENT">CROWDFUNDING_PAYMENT</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <label class="field">
+                        <span>Destination currency</span>
+                        <select id="destinationCurrencyCode" required>
+                            <option value="INR">INR</option>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </label>
+
+                    <label class="field" id="campaignField" hidden>
+                        <span>Crowdfunding campaign</span>
+                        <select id="crowdfundingCampaignId"></select>
+                    </label>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Create Payment</button>
+                        <button type="button" class="btn btn-ghost" id="resetPaymentFormBtn">Reset</button>
+                    </div>
+                </form>
+                <p class="inline-note">Validation follows backend service rules: supported currency, positive amount, max amount, active accounts, and matching account currency.</p>
+            </div>
+        </section>
+
+        <section class="section container" id="payments" data-reveal>
+            <div class="section-heading">
+                <h2>Payment Monitor</h2>
+                <p>GET /api/payments with status-aware filtering and quick drill-down.</p>
+            </div>
+            <div class="toolbar glass">
+                <label class="field">
+                    <span>Search payment reference</span>
+                    <input id="paymentSearch" type="search" placeholder="PAY-20260803-0004">
+                </label>
+                <label class="field">
+                    <span>Status</span>
+                    <select id="paymentStatusFilter">
+                        <option value="ALL">ALL</option>
+                        <option value="INITIATED">INITIATED</option>
+                        <option value="PROCESSING">PROCESSING</option>
+                        <option value="SUCCESS">SUCCESS</option>
+                        <option value="CREATED">CREATED</option>
+                        <option value="VALIDATED">VALIDATED</option>
+                        <option value="SENT">SENT</option>
+                        <option value="COMPLETED">COMPLETED</option>
+                        <option value="FAILED">FAILED</option>
+                        <option value="CANCELLED">CANCELLED</option>
+                    </select>
+                </label>
+                <button class="btn btn-ghost" id="refreshPaymentsBtn">Refresh Payments</button>
+            </div>
+            <div class="table-wrap glass">
+                <table class="payments-table">
+                    <thead>
+                        <tr>
+                            <th>Reference</th>
+                            <th>Source -> Destination</th>
+                            <th>Amount</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paymentsTableBody"></tbody>
+                </table>
+            </div>
+            <div class="empty-state glass" id="paymentsEmptyState" hidden>
+                <h3>No payments match this filter</h3>
+                <p>Try another status or clear the search query.</p>
+            </div>
+        </section>
+
+        <section class="section container" id="details" data-reveal>
+            <div class="section-heading">
+                <h2>Selected Payment Details</h2>
+                <p>Payment metadata from payments, audit transitions from payment_status_audit, and linked support tickets.</p>
+            </div>
+            <div class="details-grid">
+                <article class="glass panel" id="selectedPaymentPanel">
+                    <div class="panel-head">
+                        <h3>Payment Snapshot</h3>
+                        <small id="selectedPaymentReference">Select a payment row</small>
+                    </div>
+                    <div class="kv-grid" id="paymentSnapshot"></div>
+                </article>
+                <article class="glass panel">
+                    <div class="panel-head">
+                        <h3>Status Timeline</h3>
+                        <small>GET /api/payments/{id}/history</small>
+                    </div>
+                    <ul class="timeline" id="auditTimeline"></ul>
+                </article>
+                <article class="glass panel">
+                    <div class="panel-head">
+                        <h3>Related Tickets</h3>
+                        <small>GET /api/tickets?paymentId=</small>
+                    </div>
+                    <div id="ticketList" class="ticket-list"></div>
+                </article>
+            </div>
+        </section>
+
+        <section class="section container" id="datahub" data-reveal>
+            <div class="section-heading">
+                <h2>Data Hub</h2>
+                <p>Supporting entities from your schema used in payment workflows.</p>
+            </div>
+            <div class="hub-grid">
+                <article class="glass panel">
+                    <div class="panel-head">
+                        <h3>Accounts</h3>
+                        <small id="accountsCount">0</small>
+                    </div>
+                    <div id="accountsList" class="list-stack"></div>
+                </article>
+                <article class="glass panel">
+                    <div class="panel-head">
+                        <h3>Crowdfunding Campaigns</h3>
+                        <small id="campaignsCount">0</small>
+                    </div>
+                    <div id="campaignsList" class="list-stack"></div>
+                </article>
+                <article class="glass panel">
+                    <div class="panel-head">
+                        <h3>Open / In Progress Tickets</h3>
+                        <small id="openTicketsCount">0</small>
+                    </div>
+                    <div id="openTicketsList" class="list-stack"></div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
+
+    <dialog class="confirm-dialog" id="confirmDialog">
+        <form method="dialog">
+            <h3>Confirm Payment Creation</h3>
+            <p id="confirmText">Continue with this payment request?</p>
+            <div class="dialog-actions">
+                <button value="cancel" class="btn btn-ghost">Cancel</button>
+                <button value="confirm" class="btn btn-primary" id="confirmActionBtn">Create</button>
+            </div>
+        </form>
+    </dialog>
+
+    <template id="listItemTemplate">
+        <article class="list-item">
+            <div>
+                <h4></h4>
+                <p></p>
+            </div>
+            <span class="status-chip"></span>
+        </article>
+    </template>
+
+    <script src="script.js"></script>
 </body>
 </html>

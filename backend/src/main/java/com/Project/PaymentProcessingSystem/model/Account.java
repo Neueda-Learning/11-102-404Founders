@@ -1,5 +1,6 @@
 package com.Project.PaymentProcessingSystem.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -7,6 +8,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
@@ -39,6 +42,20 @@ public class Account {
     @Column(name = "max_daily_limit", nullable = false, precision = 15, scale = 2)
     private BigDecimal maxDailyLimit = new BigDecimal("50000.00");
 
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    @JsonIgnoreProperties({"accounts"})
+    private User user;
+
+    @Column(name = "account_number", length = 30)
+    private String accountNumber;
+
+    @Column(name = "bank_name", length = 120)
+    private String bankName;
+
+    @Column(name = "bank_ifsc", length = 30)
+    private String bankIfsc;
+
     public Account() {
     }
 
@@ -70,4 +87,16 @@ public class Account {
 
     public BigDecimal getMaxDailyLimit() { return maxDailyLimit; }
     public void setMaxDailyLimit(BigDecimal maxDailyLimit) { this.maxDailyLimit = maxDailyLimit; }
+
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+
+    public String getAccountNumber() { return accountNumber; }
+    public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }
+
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
+
+    public String getBankIfsc() { return bankIfsc; }
+    public void setBankIfsc(String bankIfsc) { this.bankIfsc = bankIfsc; }
 }

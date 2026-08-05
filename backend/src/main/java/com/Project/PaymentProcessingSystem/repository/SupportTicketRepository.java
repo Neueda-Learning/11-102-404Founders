@@ -2,6 +2,7 @@ package com.Project.PaymentProcessingSystem.repository;
 
 import com.Project.PaymentProcessingSystem.model.SupportTicket;
 import com.Project.PaymentProcessingSystem.model.TicketStatus;
+import com.Project.PaymentProcessingSystem.model.TicketType;
 import org.jspecify.annotations.NonNull;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -13,5 +14,9 @@ public interface SupportTicketRepository extends JpaRepository<@NonNull SupportT
     List<SupportTicket> findByStatus(TicketStatus status);
 
     List<SupportTicket> findByPaymentId(Long paymentId);
+
+    List<SupportTicket> findByUserId(Long userId);
+
+    List<SupportTicket> findByTicketType(TicketType ticketType);
 }
 
