@@ -399,11 +399,7 @@ function renderPaymentsTable() {
     const disputeReceiverBtn = isReceiver
       ? `<button class="btn btn-xs btn-outline-info py-0 px-1 ms-1" style="font-size:.72rem" data-dispute-receiver="${payment.id}" title="Report Unexpected Payment"><i class="bi bi-exclamation-circle"></i> Unexpected</button>`
       : "";
-    const canReverse = isReceiver
-      && ["COMPLETED", "SUCCESS"].includes(String(payment.status || "").toUpperCase())
-      && !payment.reversalPaymentId
-      && !payment.originalPaymentId
-      && !["CROWDFUNDING", "CROWDFUNDING_PAYMENT"].includes(String(payment.paymentType || "").toUpperCase());
+    const canReverse = canShowReverseAction(payment);
     const reverseBtn = canReverse
       ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:.72rem" data-reverse-payment-id="${payment.id}" title="Return Payment"><i class="bi bi-arrow-counterclockwise"></i> Return Payment</button>`
       : "";
@@ -1105,6 +1101,10 @@ async function viewPaymentHistory(paymentId) {
   const payment = state.payments.find((item) => Number(item.id) === Number(paymentId));
   if (!payment) return;
 
+  const historyReverseAction = canShowReverseAction(payment)
+    ? `<div class="col-12 mt-2"><button class="btn btn-sm btn-outline-success" id="historyReverseBtn"><i class="bi bi-arrow-counterclockwise"></i> Return Payment</button></div>`
+    : "";
+
   document.getElementById("paymentDetailArea").innerHTML = `
     <div class="row g-2 pf-surface-2 p-3">
       <div class="col-6"><small class="text-muted d-block">Reference</small><span>${esc(payment.paymentReference || "-")}</span></div>
@@ -1117,8 +1117,14 @@ async function viewPaymentHistory(paymentId) {
       <div class="col-6"><small class="text-muted d-block">Final Charged</small><span>${fmtAmt(payment.finalChargedAmount || payment.amount || 0)} ${esc(payment.currencyCode || "")}</span></div>
       <div class="col-6"><small class="text-muted d-block">Status</small><span>${esc(payment.status || "-")}</span></div>
       <div class="col-6"><small class="text-muted d-block">Failure</small><span>${esc(payment.errorCode || "-")}</span></div>
+      ${historyReverseAction}
     </div>
   `;
+
+  document.getElementById("historyReverseBtn")?.addEventListener("click", async () => {
+    bsHistoryModal.hide();
+    await handleReversePayment(paymentId);
+  });
 
   document.getElementById("paymentHistoryArea").innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
   bsHistoryModal.show();
@@ -1143,6 +1149,16 @@ async function viewPaymentHistory(paymentId) {
 function accountName(accountId) {
   const account = state.allAccounts.find((item) => Number(item.id) === Number(accountId));
   return account ? `${account.accountHolderName} (#${account.id})` : `Account #${accountId}`;
+}
+
+function canShowReverseAction(payment) {
+  const myAccountIds = new Set(state.accounts.map((account) => Number(account.id)));
+  const isReceiver = myAccountIds.has(Number(payment.destinationAccountId));
+  return isReceiver
+    && ["COMPLETED", "SUCCESS"].includes(String(payment.status || "").toUpperCase())
+    && !payment.reversalPaymentId
+    && !payment.originalPaymentId
+    && !["CROWDFUNDING", "CROWDFUNDING_PAYMENT"].includes(String(payment.paymentType || "").toUpperCase());
 }
 
 async function fetchJson(path, options) {
