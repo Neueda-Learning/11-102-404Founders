@@ -14,6 +14,7 @@ let allAccounts      = [];
 let allPayments      = [];
 let allCampaigns     = [];
 let selectedCampaign = null;
+let crowdfundingMode = "donate";
 
 /* ====== Bootstrap modal instances ====== */
 let bsPaymentModal, bsCrowdfundingModal, bsCampaignDetailModal, bsHistoryModal, bsToast;
@@ -274,11 +275,135 @@ async function handlePaymentSubmit() {
    CROWDFUNDING
    ============================================================ */
 function initCrowdfundingModal() {
+  const donateModeBtn = document.getElementById("crowdfundingDonateModeBtn");
+  const createModeBtn = document.getElementById("crowdfundingCreateModeBtn");
+  const createBtn = document.getElementById("createCampaignBtn");
+  const emptyCreateBtn = document.getElementById("emptyStateCreateCampaignBtn");
+
+  donateModeBtn?.addEventListener("click", () => setCrowdfundingMode("donate"));
+  createModeBtn?.addEventListener("click", () => setCrowdfundingMode("create"));
+  createBtn?.addEventListener("click", handleCreateCampaign);
+  emptyCreateBtn?.addEventListener("click", () => setCrowdfundingMode("create"));
+
   document.getElementById("crowdfundingModal")
-    .addEventListener("show.bs.modal", loadCampaigns);
+    .addEventListener("show.bs.modal", async () => {
+      syncCampaignFormDefaults();
+      setCrowdfundingMode("donate");
+      await loadCampaigns();
+    });
+}
+
+function setCrowdfundingMode(mode) {
+  crowdfundingMode = mode === "create" ? "create" : "donate";
+  const donateModeBtn = document.getElementById("crowdfundingDonateModeBtn");
+  const createModeBtn = document.getElementById("crowdfundingCreateModeBtn");
+  const createSection = document.getElementById("createCampaignSection");
+  const loadingState = document.getElementById("campaignsLoadingState");
+  const grid = document.getElementById("campaignsGrid");
+  const emptyState = document.getElementById("campaignsEmptyState");
+
+  donateModeBtn?.classList.toggle("btn-success", crowdfundingMode === "donate");
+  donateModeBtn?.classList.toggle("btn-outline-success", crowdfundingMode !== "donate");
+  createModeBtn?.classList.toggle("btn-success", crowdfundingMode === "create");
+  createModeBtn?.classList.toggle("btn-outline-success", crowdfundingMode !== "create");
+
+  if (createSection) {
+    createSection.classList.toggle("d-none", crowdfundingMode !== "create");
+  }
+
+  if (crowdfundingMode === "create") {
+    hide("campaignsLoadingState");
+    hide("campaignsGrid");
+    hide("campaignsEmptyState");
+    return;
+  }
+
+  if (grid && grid.innerHTML.trim()) {
+    hide("campaignsLoadingState");
+    show("campaignsGrid");
+    hide("campaignsEmptyState");
+  } else if (loadingState && !loadingState.classList.contains("d-none")) {
+    show("campaignsLoadingState");
+    hide("campaignsGrid");
+    hide("campaignsEmptyState");
+  } else {
+    hide("campaignsLoadingState");
+    hide("campaignsGrid");
+    show("campaignsEmptyState");
+  }
+}
+
+function syncCampaignFormDefaults() {
+  const dateInput = document.getElementById("campaignEndDateInput");
+  const currencyInput = document.getElementById("campaignTargetCurrencyInput");
+  if (currencyInput && selectedAccount?.currencyCode) {
+    currencyInput.value = selectedAccount.currencyCode;
+  }
+  if (dateInput && !dateInput.value) {
+    const nextMonth = new Date();
+    nextMonth.setDate(nextMonth.getDate() + 30);
+    dateInput.value = nextMonth.toISOString().slice(0, 10);
+  }
+}
+
+async function handleCreateCampaign() {
+  clearAlert("campaignsAlertArea");
+
+  if (!selectedAccount?.id) {
+    return setAlert("campaignsAlertArea", "Please select an account before creating a campaign.", "warning");
+  }
+
+  const name = document.getElementById("campaignNameInput")?.value.trim();
+  const description = document.getElementById("campaignDescriptionInput")?.value.trim();
+  const targetAmount = Number(document.getElementById("campaignTargetAmountInput")?.value);
+  const targetCurrency = document.getElementById("campaignTargetCurrencyInput")?.value;
+  const campaignEndDate = document.getElementById("campaignEndDateInput")?.value;
+
+  if (!name) {
+    return setAlert("campaignsAlertArea", "Campaign name is required.", "warning");
+  }
+  if (!targetAmount || targetAmount <= 0) {
+    return setAlert("campaignsAlertArea", "Target amount must be greater than zero.", "warning");
+  }
+  if (!campaignEndDate) {
+    return setAlert("campaignsAlertArea", "Campaign end date is required.", "warning");
+  }
+
+  const btn = document.getElementById("createCampaignBtn");
+  setLoading(btn, true, "Creating...");
+  try {
+    const created = await fetchJson("/api/campaigns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        campaignName: name,
+        description,
+        bucketAccountId: Number(selectedAccount.id),
+        targetAmount,
+        targetCurrency,
+        campaignEndDate,
+        donationCategory: "General",
+        donationOptions: "ANY",
+        thresholdPercentage: 100
+      })
+    });
+
+    document.getElementById("createCampaignForm")?.reset();
+    syncCampaignFormDefaults();
+    showToast("Campaign created", `${created.campaignName || "Campaign"} is now active.`, "success");
+    await loadCampaigns();
+    setCrowdfundingMode("donate");
+  } catch (err) {
+    setAlert("campaignsAlertArea", err.message || "Failed to create campaign.", "danger");
+  } finally {
+    setLoading(btn, false, '<i class="bi bi-plus-circle me-1"></i>Create Campaign');
+  }
 }
 
 async function loadCampaigns() {
+  if (crowdfundingMode !== "donate") {
+    return;
+  }
   clearAlert("campaignsAlertArea");
   show("campaignsLoadingState");
   hide("campaignsGrid");
@@ -407,19 +532,16 @@ async function handleContribution() {
   setLoading(btn, true, "Contributing…");
 
   try {
-    const cur = selectedCampaign.targetCurrency || selectedAccount.currencyCode;
-    const created = await fetchJson("/api/payments", {
+    const cur = selectedAccount.currencyCode || selectedCampaign.targetCurrency;
+    const created = await fetchJson(`/api/campaigns/${selectedCampaign.id}/contribute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId,
-        sourceAccountId:       selectedAccount.id,
-        destinationAccountId:  bucketId,
+        sourceAccountId: selectedAccount.id,
         amount,
-        currencyCode:          cur,
-        destinationCurrencyCode: cur,
-        paymentType:           "CROWDFUNDING_PAYMENT",
-        crowdfundingCampaignId: selectedCampaign.id,
+        currencyCode: cur,
+        idempotencyKey: `${selectedCampaign.id}-${selectedAccount.id}-${amount}-${Date.now()}`
       }),
     });
 
