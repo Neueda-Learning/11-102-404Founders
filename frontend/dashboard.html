@@ -90,8 +90,8 @@
         <div class="col-md-6"><label class="form-label small fw-semibold">Source</label><select class="form-select" id="inlineSourceAccountId"></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold">Destination</label><select class="form-select" id="inlineDestinationAccountId"></select></div>
         <div class="col-md-4"><label class="form-label small fw-semibold">Amount</label><input id="inlinePaymentAmount" type="number" class="form-control" min="0.01" step="0.01"></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold">Currency</label><select class="form-select" id="inlineCurrencyCode"><option value="INR">INR</option><option value="USD">USD</option></select></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold">Destination Currency</label><select class="form-select" id="inlineDestinationCurrencyCode"><option value="INR">INR</option><option value="USD">USD</option></select></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Source Account Currency</label><input class="form-control" id="inlineCurrencyCode" readonly></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Destination Account Currency</label><input class="form-control" id="inlineDestinationCurrencyCode" readonly></div>
         <div class="col-12 mt-2"><button type="button" class="btn btn-pf" id="inlineSubmitPaymentBtn">Send Payment</button></div>
       </div>
     </div>
@@ -181,8 +181,8 @@
         <div id="paymentAlertArea"></div>
         <div class="mb-2"><label class="form-label small fw-semibold">Source</label><select class="form-select" id="sourceAccountId"></select></div>
         <div class="mb-2"><label class="form-label small fw-semibold">Destination</label><select class="form-select" id="destinationAccountId"></select></div>
-        <div class="row g-2"><div class="col-7"><label class="form-label small fw-semibold">Amount</label><input id="paymentAmount" type="number" class="form-control" min="0.01" step="0.01"></div><div class="col-5"><label class="form-label small fw-semibold">Currency</label><select class="form-select" id="currencyCode"><option value="INR">INR</option><option value="USD">USD</option></select></div></div>
-        <div class="mt-2"><label class="form-label small fw-semibold">Destination Currency</label><select class="form-select" id="destinationCurrencyCode"><option value="INR">INR</option><option value="USD">USD</option></select></div>
+        <div class="row g-2"><div class="col-7"><label class="form-label small fw-semibold">Amount</label><input id="paymentAmount" type="number" class="form-control" min="0.01" step="0.01"></div><div class="col-5"><label class="form-label small fw-semibold">Source Account Currency</label><input class="form-control" id="currencyCode" readonly></div></div>
+        <div class="mt-2"><label class="form-label small fw-semibold">Destination Account Currency</label><input class="form-control" id="destinationCurrencyCode" readonly></div>
       </div>
       <div class="modal-footer border-0"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-pf" id="submitPaymentBtn">Send Payment</button></div>
     </div></div>
@@ -205,6 +205,25 @@
   <div class="modal fade pf-modal" id="paymentHistoryModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0"><div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold">Payment Details</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body"><div id="paymentDetailArea" class="mb-3"></div><div id="paymentHistoryArea"></div></div>
+    </div></div>
+  </div>
+
+  <div class="modal fade pf-modal" id="paymentConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold">Confirm Payment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" id="paymentConfirmCloseBtn"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="pf-surface-2 p-3 small" id="paymentConfirmSummary"></div>
+        <div class="alert alert-warning py-2 small mt-3 mb-0">
+          Payment will be processed in <strong><span id="paymentConfirmCountdown">5</span></strong> seconds.
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-light" id="cancelPaymentConfirmBtn" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-pf" id="confirmPaymentNowBtn">Confirm Payment</button>
+      </div>
     </div></div>
   </div>
 

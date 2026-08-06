@@ -3,6 +3,7 @@ package com.Project.PaymentProcessingSystem.controller;
 import com.Project.PaymentProcessingSystem.model.CreatePaymentRequest;
 import com.Project.PaymentProcessingSystem.model.DashboardAnalyticsResponse;
 import com.Project.PaymentProcessingSystem.model.Payment;
+import com.Project.PaymentProcessingSystem.model.PaymentReversalRequest;
 import com.Project.PaymentProcessingSystem.model.PaymentStatus;
 import com.Project.PaymentProcessingSystem.model.PaymentStatusAudit;
 import com.Project.PaymentProcessingSystem.model.PaymentType;
@@ -135,6 +136,12 @@ public class PaymentController {
     @PatchMapping("/{id}/cancel")
     public Payment cancelPayment(@PathVariable Long id, @RequestParam(required = false) String reason) {
         return paymentService.cancelPayment(id, reason);
+    }
+
+    @PostMapping("/{id}/reverse")
+    public ResponseEntity<Payment> reversePayment(@PathVariable Long id,
+                                                  @RequestBody PaymentReversalRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(paymentService.reverseReceivedPayment(id, request));
     }
 
     @GetMapping("/analytics/dashboard")

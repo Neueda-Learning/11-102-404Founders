@@ -197,16 +197,23 @@ async function createUserAndAccount() {
 
   const fullName        = document.getElementById("newUserFullName")?.value.trim();
   const email           = document.getElementById("newUserEmail")?.value.trim().toLowerCase();
+  const phoneNumber     = document.getElementById("newUserPhone")?.value.trim() || "";
   const defaultCurrency = document.getElementById("newUserCurrency")?.value || "INR";
   const accountType     = document.getElementById("newUserAccountType")?.value.trim() || "Checking Account";
   const bankName        = document.getElementById("newUserBankName")?.value.trim() || "PayFlow Bank";
   const openingBalance  = Number(document.getElementById("newUserBalance")?.value || 0);
   const dailyLimit      = Number(document.getElementById("newUserDailyLimit")?.value || 5000);
 
-  if (!fullName)                                           return setAlert("createUserAlertArea", "Full name is required.", "warning");
-  if (!email)                                              return setAlert("createUserAlertArea", "Email is required.", "warning");
+  if (!fullName) return setAlert("createUserAlertArea", "Full name is required.", "warning");
+  if (!isValidPersonName(fullName)) return setAlert("createUserAlertArea", "Name contains invalid characters.", "warning");
+  if (!email) return setAlert("createUserAlertArea", "Email is required.", "warning");
+  if (!isValidEmail(email)) return setAlert("createUserAlertArea", "Please enter a valid email address.", "warning");
+  if (phoneNumber && !isValidPhone(phoneNumber)) return setAlert("createUserAlertArea", "Phone number must be 10 to 15 digits.", "warning");
+  if (!accountType) return setAlert("createUserAlertArea", "Account type is required.", "warning");
+  if (!bankName) return setAlert("createUserAlertArea", "Bank name is required.", "warning");
+  if (!SUPPORTED_CURRENCY_UI.has(defaultCurrency)) return setAlert("createUserAlertArea", "Only INR/USD are supported.", "warning");
   if (Number.isNaN(openingBalance) || openingBalance < 0) return setAlert("createUserAlertArea", "Opening balance cannot be negative.", "warning");
-  if (Number.isNaN(dailyLimit)     || dailyLimit <= 0)    return setAlert("createUserAlertArea", "Daily limit must be greater than zero.", "warning");
+  if (Number.isNaN(dailyLimit) || dailyLimit <= 0) return setAlert("createUserAlertArea", "Daily limit must be greater than zero.", "warning");
 
   const btn = document.getElementById("createUserBtn");
   setLoading(btn, true, "Creating...");
@@ -215,7 +222,7 @@ async function createUserAndAccount() {
     const user = await fetchJson("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullName, email, defaultCurrency, dailyTransactionLimit: dailyLimit })
+      body: JSON.stringify({ fullName, email, phoneNumber: phoneNumber || null, defaultCurrency, dailyTransactionLimit: dailyLimit })
     });
 
     const accountNumber = `PF${Date.now()}`.slice(-10);
@@ -246,7 +253,12 @@ async function createUserAndAccount() {
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(createdAccount));
     window.location.href = "dashboard.html";
   } catch (error) {
-    setAlert("createUserAlertArea", error.message || "Unable to create user.", "danger");
+    const msg = String(error?.message || "");
+    if (msg.toLowerCase().includes("failed to fetch")) {
+      setAlert("createUserAlertArea", "Cannot reach backend service. Please ensure server is running and try again.", "danger");
+    } else {
+      setAlert("createUserAlertArea", msg || "Unable to create user.", "danger");
+    }
   } finally {
     setLoading(btn, false, '<i class="bi bi-person-plus-fill me-1"></i>Create User');
   }
@@ -267,6 +279,10 @@ async function createAccountForUser() {
   const bankName       = document.getElementById("newAccountBankName")?.value.trim() || "PayFlow Bank";
   const accountStatus  = document.getElementById("newAccountStatus")?.value || "ACTIVE";
 
+  if (!accountType) return setAlert("createAccountAlertArea", "Account type is required.", "warning");
+  if (!bankName) return setAlert("createAccountAlertArea", "Bank name is required.", "warning");
+  if (!SUPPORTED_CURRENCY_UI.has(currencyCode)) return setAlert("createAccountAlertArea", "Only INR/USD are supported.", "warning");
+  if (!["ACTIVE", "INACTIVE"].includes(accountStatus)) return setAlert("createAccountAlertArea", "Invalid account status.", "warning");
   if (Number.isNaN(openingBalance) || openingBalance < 0)
     return setAlert("createAccountAlertArea", "Opening balance cannot be negative.", "warning");
 
@@ -297,7 +313,12 @@ async function createAccountForUser() {
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(created));
     window.location.href = "dashboard.html";
   } catch (error) {
-    setAlert("createAccountAlertArea", error.message || "Unable to create account.", "danger");
+    const msg = String(error?.message || "");
+    if (msg.toLowerCase().includes("failed to fetch")) {
+      setAlert("createAccountAlertArea", "Cannot reach backend service. Please ensure server is running and try again.", "danger");
+    } else {
+      setAlert("createAccountAlertArea", msg || "Unable to create account.", "danger");
+    }
   } finally {
     setLoading(btn, false, '<i class="bi bi-plus-circle me-1"></i>Create Account');
   }
@@ -344,7 +365,12 @@ function clearAlert(areaId) {
 }
 
 async function fetchJson(path, options) {
-  const response = await fetch(`${API_BASE}${path}`, options);
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, options);
+  } catch {
+    throw new Error("Failed to fetch");
+  }
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
@@ -357,6 +383,21 @@ async function fetchJson(path, options) {
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+const SUPPORTED_CURRENCY_UI = new Set(["INR", "USD"]);
+
+function isValidPersonName(name) {
+  return /^[A-Za-z][A-Za-z\s.'-]{1,79}$/.test(name);
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
 }
 
 function setLoading(btn, loading, label) {

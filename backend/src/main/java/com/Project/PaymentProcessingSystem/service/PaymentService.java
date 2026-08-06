@@ -8,6 +8,7 @@ import com.Project.PaymentProcessingSystem.model.CrowdfundingCampaign;
 import com.Project.PaymentProcessingSystem.model.DashboardAnalyticsResponse;
 import com.Project.PaymentProcessingSystem.model.DisputeRole;
 import com.Project.PaymentProcessingSystem.model.Payment;
+import com.Project.PaymentProcessingSystem.model.PaymentReversalRequest;
 import com.Project.PaymentProcessingSystem.model.PaymentStatus;
 import com.Project.PaymentProcessingSystem.model.PaymentStatusAudit;
 import com.Project.PaymentProcessingSystem.model.PaymentType;
@@ -206,10 +207,7 @@ public class PaymentService {
 
         PaymentType normalizedType = normalizePaymentType(request.getPaymentType());
         boolean usdInvolved = isUsdTransaction(sourceCurrency, destinationCurrency);
-        if (usdInvolved && !Boolean.TRUE.equals(request.getForexConfirmed())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "International currency transaction detected. A 1.8% forex fee must be confirmed before proceeding.");
-        }
+        boolean confirmationTimedOut = Boolean.TRUE.equals(request.getConfirmationTimedOut());
 
         BigDecimal originalAmount = request.getAmount().setScale(2, RoundingMode.HALF_UP);
         BigDecimal exchangeRate = resolveExchangeRate(sourceCurrency, destinationCurrency);
@@ -219,24 +217,25 @@ public class PaymentService {
         BigDecimal forexFee = usdInvolved ? calculateForexFee(sourceEquivalent) : BigDecimal.ZERO;
         BigDecimal finalChargedAmount = sourceEquivalent.add(forexFee).setScale(2, RoundingMode.HALF_UP);
 
-        Payment payment = new Payment();
-        payment.setPaymentReference(generateRef());
-        payment.setSourceAccountId(source.getId());
-        payment.setDestinationAccountId(destination.getId());
-        payment.setAmount(originalAmount);
-        payment.setCurrencyCode(sourceCurrency);
-        payment.setDestinationCurrencyCode(destinationCurrency);
-        payment.setPaymentType(normalizedType);
-        payment.setCrowdfundingCampaignId(request.getCrowdfundingCampaignId());
-        payment.setStatus(PaymentStatus.CREATED);
-        payment.setIdempotencyKey(resolveIdempotencyKey(request, destinationCurrency));
-        payment.setForexFee(forexFee);
-        payment.setConvertedAmount(sourceEquivalent);
-        payment.setExchangeRate(exchangeRate);
-        payment.setFinalChargedAmount(finalChargedAmount);
-        payment.setErrorCode(null);
-        payment.setCreatedAt(LocalDateTime.now());
-        payment.setCompletedAt(null);
+        if (confirmationTimedOut) {
+            Payment timedOut = buildBasePayment(source, destination, request, sourceCurrency, destinationCurrency,
+                    normalizedType, originalAmount, sourceEquivalent, exchangeRate, forexFee, finalChargedAmount);
+            Payment savedTimeout = paymentRepository.save(timedOut);
+            writeAudit(savedTimeout.getId(), null, PaymentStatus.CREATED, "Payment created");
+            savedTimeout.setErrorCode("Payment confirmation timeout");
+            savedTimeout = step(savedTimeout, PaymentStatus.FAILED, "Payment confirmation timeout");
+            savedTimeout.setCompletedAt(LocalDateTime.now());
+            createFailureTicket(savedTimeout, savedTimeout.getErrorCode());
+            return paymentRepository.save(savedTimeout);
+        }
+
+        if (usdInvolved && !Boolean.TRUE.equals(request.getForexConfirmed())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "International currency transaction detected. A 1.8% forex fee must be confirmed before proceeding.");
+        }
+
+        Payment payment = buildBasePayment(source, destination, request, sourceCurrency, destinationCurrency,
+                normalizedType, originalAmount, sourceEquivalent, exchangeRate, forexFee, finalChargedAmount);
 
         Payment saved = paymentRepository.save(payment);
         writeAudit(saved.getId(), null, PaymentStatus.CREATED, "Payment created");
@@ -289,6 +288,38 @@ public class PaymentService {
         }
     }
 
+    private Payment buildBasePayment(Account source,
+                                     Account destination,
+                                     CreatePaymentRequest request,
+                                     String sourceCurrency,
+                                     String destinationCurrency,
+                                     PaymentType normalizedType,
+                                     BigDecimal originalAmount,
+                                     BigDecimal sourceEquivalent,
+                                     BigDecimal exchangeRate,
+                                     BigDecimal forexFee,
+                                     BigDecimal finalChargedAmount) {
+        Payment payment = new Payment();
+        payment.setPaymentReference(generateRef());
+        payment.setSourceAccountId(source.getId());
+        payment.setDestinationAccountId(destination.getId());
+        payment.setAmount(originalAmount);
+        payment.setCurrencyCode(sourceCurrency);
+        payment.setDestinationCurrencyCode(destinationCurrency);
+        payment.setPaymentType(normalizedType);
+        payment.setCrowdfundingCampaignId(request.getCrowdfundingCampaignId());
+        payment.setStatus(PaymentStatus.CREATED);
+        payment.setIdempotencyKey(resolveIdempotencyKey(request, destinationCurrency));
+        payment.setForexFee(forexFee);
+        payment.setConvertedAmount(sourceEquivalent);
+        payment.setExchangeRate(exchangeRate);
+        payment.setFinalChargedAmount(finalChargedAmount);
+        payment.setErrorCode(null);
+        payment.setCreatedAt(LocalDateTime.now());
+        payment.setCompletedAt(null);
+        return payment;
+    }
+
     public Payment updatePaymentStatus(Long paymentId, PaymentStatus newStatus, String reason) {
         if (newStatus == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status is required");
@@ -324,6 +355,116 @@ public class PaymentService {
         payment.setCompletedAt(LocalDateTime.now());
         createFailureTicket(payment, payment.getErrorCode());
         return paymentRepository.save(payment);
+    }
+
+    @Transactional
+    public Payment reverseReceivedPayment(Long paymentId, PaymentReversalRequest request) {
+        if (request == null || request.getUserId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User id is required for reversal");
+        }
+
+        Payment original = getPaymentById(paymentId);
+        String originalStatus = String.valueOf(original.getStatus());
+        if (!(original.getStatus() == PaymentStatus.COMPLETED || original.getStatus() == PaymentStatus.SUCCESS)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only successful payments can be reversed");
+        }
+        if (original.getStatus() == PaymentStatus.CANCELLED || original.getStatus() == PaymentStatus.FAILED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Failed or cancelled payments cannot be reversed");
+        }
+        if (original.getOriginalPaymentId() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Reversal transactions cannot be reversed again");
+        }
+        if (original.getReversalPaymentId() != null || paymentRepository.existsByOriginalPaymentId(original.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This payment has already been reversed");
+        }
+        if (original.getPaymentType() == PaymentType.CROWDFUNDING || original.getPaymentType() == PaymentType.CROWDFUNDING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Crowdfunding payments are not eligible for receiver reversal");
+        }
+
+        Account receiverAccount = accountService.getAccountById(original.getDestinationAccountId());
+        Account senderAccount = accountService.getAccountById(original.getSourceAccountId());
+        accountService.validateAccountOwnedByUser(receiverAccount, request.getUserId());
+
+        if (receiverAccount.getAccountStatus() != AccountStatus.ACTIVE || senderAccount.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Both sender and receiver accounts must be active for reversal");
+        }
+
+        BigDecimal senderRefundAmount = original.getConvertedAmount() != null
+                ? original.getConvertedAmount().setScale(2, RoundingMode.HALF_UP)
+                : (original.getAmount() == null ? BigDecimal.ZERO : original.getAmount().setScale(2, RoundingMode.HALF_UP));
+        if (senderRefundAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid original payment amount for reversal");
+        }
+
+        String receiverCurrency = normalizeCurrency(receiverAccount.getCurrencyCode());
+        String senderCurrency = normalizeCurrency(senderAccount.getCurrencyCode());
+        BigDecimal exchangeRate = resolveExchangeRate(receiverCurrency, senderCurrency);
+        BigDecimal receiverDebitAmount = receiverCurrency.equalsIgnoreCase(senderCurrency)
+                ? senderRefundAmount
+                : senderRefundAmount.divide(exchangeRate, 6, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
+
+        if (receiverAccount.getBalance() == null || receiverAccount.getBalance().compareTo(receiverDebitAmount) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Payment reversal failed - insufficient balance in receiver account");
+        }
+
+        String reversalReason = request.getReason() == null || request.getReason().isBlank()
+                ? "Returned by receiver"
+                : request.getReason().trim();
+
+        Payment reversal = new Payment();
+        reversal.setPaymentReference(generateRef());
+        reversal.setSourceAccountId(receiverAccount.getId());
+        reversal.setDestinationAccountId(senderAccount.getId());
+        reversal.setAmount(senderRefundAmount);
+        reversal.setCurrencyCode(receiverCurrency);
+        reversal.setDestinationCurrencyCode(senderCurrency);
+        reversal.setPaymentType(PaymentType.NORMAL_PAYMENT);
+        reversal.setStatus(PaymentStatus.CREATED);
+        reversal.setOriginalPaymentId(original.getId());
+        reversal.setReversalReason(reversalReason);
+        reversal.setIdempotencyKey("reversal-" + original.getId() + "-" + request.getUserId());
+        reversal.setExchangeRate(exchangeRate);
+        reversal.setConvertedAmount(receiverDebitAmount);
+        reversal.setForexFee(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        reversal.setFinalChargedAmount(receiverDebitAmount);
+        reversal.setCreatedAt(LocalDateTime.now());
+        reversal.setCompletedAt(null);
+        reversal.setErrorCode(null);
+
+        reversal = paymentRepository.save(reversal);
+        writeAudit(reversal.getId(), null, PaymentStatus.CREATED,
+                "Receiver requested reversal for transaction " + original.getPaymentReference());
+
+        reversal.setStatus(PaymentStatus.PROCESSING);
+        writeAudit(reversal.getId(), PaymentStatus.CREATED, PaymentStatus.PROCESSING,
+                "Reversal approved and processing started");
+        paymentRepository.save(reversal);
+
+        receiverAccount.setBalance(receiverAccount.getBalance().subtract(receiverDebitAmount));
+        senderAccount.setBalance((senderAccount.getBalance() == null ? BigDecimal.ZERO : senderAccount.getBalance()).add(senderRefundAmount));
+        accountService.save(receiverAccount);
+        accountService.save(senderAccount);
+
+        reversal.setStatus(PaymentStatus.REVERSED);
+        reversal.setCompletedAt(LocalDateTime.now());
+        reversal.setRemainingDailyLimit(calculateRemainingDailyLimit(request.getUserId()));
+        writeAudit(reversal.getId(), PaymentStatus.PROCESSING, PaymentStatus.REVERSED,
+                "Reversal completed and account balances updated");
+        reversal = paymentRepository.save(reversal);
+
+        original.setReversalPaymentId(reversal.getId());
+        paymentRepository.save(original);
+        writeAudit(original.getId(), original.getStatus(), original.getStatus(),
+                "Receiver initiated reversal. Reversal reference: " + reversal.getPaymentReference() + " (original status: " + originalStatus + ")");
+
+        return reversal;
     }
 
     public DashboardAnalyticsResponse getDashboardAnalytics() {

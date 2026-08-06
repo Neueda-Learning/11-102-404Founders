@@ -18,6 +18,10 @@ import java.util.Optional;
 public interface PaymentRepository extends JpaRepository<@NonNull Payment, @NonNull Long> {
 	Optional<Payment> findTopByIdempotencyKeyOrderByCreatedAtDesc(String idempotencyKey);
 
+	boolean existsByOriginalPaymentId(Long originalPaymentId);
+
+	Optional<Payment> findByOriginalPaymentId(Long originalPaymentId);
+
 	List<Payment> findByStatusIn(Collection<PaymentStatus> statuses);
 
 	@Query("""

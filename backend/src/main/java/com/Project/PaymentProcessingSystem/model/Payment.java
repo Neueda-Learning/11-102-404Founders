@@ -47,6 +47,15 @@ public class Payment {
     @Column(name = "crowdfunding_campaign_id")
     private Long crowdfundingCampaignId;
 
+    @Column(name = "original_payment_id")
+    private Long originalPaymentId;
+
+    @Column(name = "reversal_payment_id")
+    private Long reversalPaymentId;
+
+    @Column(name = "reversal_reason", length = 255)
+    private String reversalReason;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PaymentStatus status = PaymentStatus.CREATED;
@@ -106,6 +115,15 @@ public class Payment {
 
     public Long getCrowdfundingCampaignId() { return crowdfundingCampaignId; }
     public void setCrowdfundingCampaignId(Long crowdfundingCampaignId) { this.crowdfundingCampaignId = crowdfundingCampaignId; }
+
+    public Long getOriginalPaymentId() { return originalPaymentId; }
+    public void setOriginalPaymentId(Long originalPaymentId) { this.originalPaymentId = originalPaymentId; }
+
+    public Long getReversalPaymentId() { return reversalPaymentId; }
+    public void setReversalPaymentId(Long reversalPaymentId) { this.reversalPaymentId = reversalPaymentId; }
+
+    public String getReversalReason() { return reversalReason; }
+    public void setReversalReason(String reversalReason) { this.reversalReason = reversalReason; }
 
     public PaymentStatus getStatus() { return status; }
     public void setStatus(PaymentStatus status) { this.status = status; }
