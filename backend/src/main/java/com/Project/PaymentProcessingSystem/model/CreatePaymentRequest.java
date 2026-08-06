@@ -16,6 +16,7 @@ public class CreatePaymentRequest {
     private String sourceAccountNumber;
     private String destinationAccountNumber;
     private Boolean forexConfirmed;
+    private Boolean confirmationTimedOut;
 
     public CreatePaymentRequest() {
     }
@@ -114,6 +115,14 @@ public class CreatePaymentRequest {
 
     public void setForexConfirmed(Boolean forexConfirmed) {
         this.forexConfirmed = forexConfirmed;
+    }
+
+    public Boolean getConfirmationTimedOut() {
+        return confirmationTimedOut;
+    }
+
+    public void setConfirmationTimedOut(Boolean confirmationTimedOut) {
+        this.confirmationTimedOut = confirmationTimedOut;
     }
 }
 

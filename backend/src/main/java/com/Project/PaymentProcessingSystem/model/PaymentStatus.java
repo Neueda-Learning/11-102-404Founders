@@ -8,6 +8,7 @@ public enum PaymentStatus {
     VALIDATED,
     SENT,
     COMPLETED,
+    REVERSED,
     FAILED,
     CANCELLED
 }

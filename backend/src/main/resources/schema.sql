@@ -63,13 +63,18 @@ CREATE TABLE IF NOT EXISTS payments (
     destination_currency_code VARCHAR(3) NOT NULL DEFAULT 'INR',
     payment_type             ENUM('NORMAL_PAYMENT', 'CROWDFUNDING_PAYMENT', 'REGULAR', 'CROWDFUNDING') NOT NULL DEFAULT 'NORMAL_PAYMENT',
     crowdfunding_campaign_id BIGINT,
-    status                   ENUM('INITIATED', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED', 'CREATED', 'VALIDATED', 'SENT', 'COMPLETED') NOT NULL DEFAULT 'INITIATED',
+    original_payment_id      BIGINT,
+    reversal_payment_id      BIGINT,
+    reversal_reason          VARCHAR(255),
+    status                   ENUM('INITIATED', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED', 'CREATED', 'VALIDATED', 'SENT', 'COMPLETED', 'REVERSED') NOT NULL DEFAULT 'INITIATED',
     error_code               VARCHAR(50),
     created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at             TIMESTAMP,
     FOREIGN KEY (source_account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (destination_account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (crowdfunding_campaign_id) REFERENCES crowdfunding_campaigns(campaign_id),
+    FOREIGN KEY (original_payment_id) REFERENCES payments(payment_id),
+    FOREIGN KEY (reversal_payment_id) REFERENCES payments(payment_id),
     INDEX idx_payments_status (status),
     INDEX idx_payments_created_at (created_at),
     INDEX idx_payments_source (source_account_id),
@@ -317,7 +322,7 @@ DEALLOCATE PREPARE s11;
 
 ALTER TABLE payments
     MODIFY COLUMN payment_type ENUM('NORMAL_PAYMENT', 'CROWDFUNDING_PAYMENT', 'REGULAR', 'CROWDFUNDING') NOT NULL DEFAULT 'NORMAL_PAYMENT',
-    MODIFY COLUMN status ENUM('INITIATED', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED', 'CREATED', 'VALIDATED', 'SENT', 'COMPLETED') NOT NULL DEFAULT 'INITIATED',
+    MODIFY COLUMN status ENUM('INITIATED', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED', 'CREATED', 'VALIDATED', 'SENT', 'COMPLETED', 'REVERSED') NOT NULL DEFAULT 'INITIATED',
     MODIFY COLUMN error_code VARCHAR(255);
 
 SET @stmt = (
@@ -333,6 +338,82 @@ SET @stmt = (
 PREPARE s11b FROM @stmt;
 EXECUTE s11b;
 DEALLOCATE PREPARE s11b;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'payments' AND column_name = 'original_payment_id'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD COLUMN original_payment_id BIGINT'
+    )
+);
+PREPARE s11c FROM @stmt;
+EXECUTE s11c;
+DEALLOCATE PREPARE s11c;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'payments' AND column_name = 'reversal_payment_id'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD COLUMN reversal_payment_id BIGINT'
+    )
+);
+PREPARE s11d FROM @stmt;
+EXECUTE s11d;
+DEALLOCATE PREPARE s11d;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'payments' AND column_name = 'reversal_reason'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD COLUMN reversal_reason VARCHAR(255)'
+    )
+);
+PREPARE s11e FROM @stmt;
+EXECUTE s11e;
+DEALLOCATE PREPARE s11e;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'payments'
+              AND COLUMN_NAME = 'original_payment_id'
+              AND REFERENCED_TABLE_NAME = 'payments'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD CONSTRAINT fk_payments_original_payment FOREIGN KEY (original_payment_id) REFERENCES payments(payment_id)'
+    )
+);
+PREPARE s11f FROM @stmt;
+EXECUTE s11f;
+DEALLOCATE PREPARE s11f;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'payments'
+              AND COLUMN_NAME = 'reversal_payment_id'
+              AND REFERENCED_TABLE_NAME = 'payments'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD CONSTRAINT fk_payments_reversal_payment FOREIGN KEY (reversal_payment_id) REFERENCES payments(payment_id)'
+    )
+);
+PREPARE s11g FROM @stmt;
+EXECUTE s11g;
+DEALLOCATE PREPARE s11g;
 
 SET @stmt = (
     SELECT IF(

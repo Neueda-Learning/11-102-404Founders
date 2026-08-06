@@ -42,7 +42,9 @@ const state = {
   tickets: [],
   campaigns: [],
   dashboard: null,
-  currentTicketPaymentId: null
+  currentTicketPaymentId: null,
+  pendingPayment: null,
+  paymentCountdownTimer: null
 };
 
 let bsPaymentModal;
@@ -50,6 +52,7 @@ let bsTicketModal;
 let bsHistoryModal;
 let bsCampaignModal;
 let bsDisputeModal;
+let bsPaymentConfirmModal;
 let bsToast;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -65,6 +68,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   bsHistoryModal  = new bootstrap.Modal(document.getElementById("paymentHistoryModal"));
   bsCampaignModal = new bootstrap.Modal(document.getElementById("createCampaignModal"));
   bsDisputeModal  = new bootstrap.Modal(document.getElementById("disputeModal"));
+  bsPaymentConfirmModal = new bootstrap.Modal(document.getElementById("paymentConfirmModal"));
   bsToast = new bootstrap.Toast(document.getElementById("pfToast"), { delay: 4200 });
 
   bindUi();
@@ -92,6 +96,10 @@ function bindUi() {
   });
   document.getElementById("submitCampaignBtn")?.addEventListener("click", handleCreateCampaign);
   document.getElementById("submitDisputeBtn")?.addEventListener("click", handleCreateDispute);
+  document.getElementById("confirmPaymentNowBtn")?.addEventListener("click", confirmPendingPaymentNow);
+  document.getElementById("cancelPaymentConfirmBtn")?.addEventListener("click", cancelPendingPaymentConfirmation);
+  document.getElementById("paymentConfirmCloseBtn")?.addEventListener("click", cancelPendingPaymentConfirmation);
+  document.getElementById("paymentConfirmModal")?.addEventListener("hidden.bs.modal", cancelPendingPaymentConfirmation);
 
   [
     "referenceFilter", "senderFilter", "receiverFilter", "statusFilter", "paymentTypeFilter", "currencyFilter",
@@ -392,6 +400,14 @@ function renderPaymentsTable() {
     const disputeReceiverBtn = isReceiver
       ? `<button class="btn btn-xs btn-outline-info py-0 px-1 ms-1" style="font-size:.72rem" data-dispute-receiver="${payment.id}" title="Report Unexpected Payment"><i class="bi bi-exclamation-circle"></i> Unexpected</button>`
       : "";
+    const canReverse = isReceiver
+      && ["COMPLETED", "SUCCESS"].includes(String(payment.status || "").toUpperCase())
+      && !payment.reversalPaymentId
+      && !payment.originalPaymentId
+      && !["CROWDFUNDING", "CROWDFUNDING_PAYMENT"].includes(String(payment.paymentType || "").toUpperCase());
+    const reverseBtn = canReverse
+      ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:.72rem" data-reverse-payment-id="${payment.id}" title="Return Payment"><i class="bi bi-arrow-counterclockwise"></i> Return Payment</button>`
+      : "";
 
     return `
       <tr>
@@ -404,7 +420,7 @@ function renderPaymentsTable() {
         <td><span class="badge ${badgeClass(payment.status)}">${esc(payment.status || "-")}</span></td>
         <td>
           <button class="btn btn-sm btn-outline-primary" data-ticket-payment-id="${payment.id}">Raise Ticket</button>
-          ${disputeSenderBtn}${disputeReceiverBtn}
+          ${disputeSenderBtn}${disputeReceiverBtn}${reverseBtn}
         </td>
       </tr>
     `;
@@ -422,6 +438,9 @@ function renderPaymentsTable() {
   tbody.querySelectorAll("[data-dispute-receiver]").forEach((button) => {
     button.addEventListener("click", () => openDisputeModal(Number(button.getAttribute("data-dispute-receiver")), "RECEIVER"));
   });
+  tbody.querySelectorAll("[data-reverse-payment-id]").forEach((button) => {
+    button.addEventListener("click", () => handleReversePayment(Number(button.getAttribute("data-reverse-payment-id"))));
+  });
 }
 
 async function handleCreatePayment(formKey = "modal") {
@@ -433,7 +452,15 @@ async function handleCreatePayment(formKey = "modal") {
   const currencyCode = getVal(ids.currency);
   const destinationCurrencyCode = getVal(ids.destinationCurrency);
 
-  if (!sourceId || !destinationId || !amount || amount <= 0) {
+  if (!sourceId || !destinationId) {
+    setAlert(ids.alertArea, "Please select valid source and destination accounts.", "warning");
+    return;
+  }
+  if (sourceId === destinationId) {
+    setAlert(ids.alertArea, "Source and destination accounts cannot be the same.", "warning");
+    return;
+  }
+  if (!amount || amount <= 0) {
     setAlert(ids.alertArea, "Please fill all payment fields correctly.", "warning");
     return;
   }
@@ -442,27 +469,117 @@ async function handleCreatePayment(formKey = "modal") {
     return;
   }
 
-  const { msg, isCross, involvesUsd } =
-    buildPaymentConfirmMsg(amount, currencyCode, destinationCurrencyCode, "Payment");
-  if (!window.confirm(msg)) return;
+  const source = state.allAccounts.find((a) => Number(a.id) === sourceId);
+  const destination = state.allAccounts.find((a) => Number(a.id) === destinationId);
+  if (!source || !destination) {
+    setAlert(ids.alertArea, "Selected accounts are invalid.", "warning");
+    return;
+  }
 
+  const { isCross, involvesUsd } =
+    buildPaymentConfirmMsg(amount, currencyCode, destinationCurrencyCode, "Payment");
+
+  state.pendingPayment = {
+    formKey,
+    ids,
+    payload: {
+      userId: state.userId,
+      sourceAccountId: sourceId,
+      destinationAccountId: destinationId,
+      amount,
+      currencyCode,
+      destinationCurrencyCode,
+      paymentType: "NORMAL_PAYMENT",
+      forexConfirmed: involvesUsd
+    },
+    summary: {
+      sourceLabel: `${source.accountHolderName} (#${source.id})`,
+      destinationLabel: `${destination.accountHolderName} (#${destination.id})`,
+      amount,
+      sourceCurrency: currencyCode,
+      destinationCurrency: destinationCurrencyCode,
+      isCross
+    }
+  };
+
+  openPaymentConfirmationCountdown();
+}
+
+function openPaymentConfirmationCountdown() {
+  if (!state.pendingPayment) return;
+  clearPaymentCountdown();
+
+  const summary = state.pendingPayment.summary;
+  document.getElementById("paymentConfirmSummary").innerHTML = `
+    <div class="row g-1">
+      <div class="col-12"><strong>Confirm Payment?</strong></div>
+      <div class="col-12"><span class="text-muted">Sender:</span> ${esc(summary.sourceLabel)}</div>
+      <div class="col-12"><span class="text-muted">Receiver:</span> ${esc(summary.destinationLabel)}</div>
+      <div class="col-6"><span class="text-muted">Amount:</span> ${fmtAmt(summary.amount)}</div>
+      <div class="col-6"><span class="text-muted">Currency:</span> ${esc(summary.destinationCurrency)}</div>
+      <div class="col-12"><span class="text-muted">Source Currency:</span> ${esc(summary.sourceCurrency)}</div>
+      <div class="col-12"><span class="text-muted">Destination Currency:</span> ${esc(summary.destinationCurrency)}</div>
+    </div>
+  `;
+
+  let left = 5;
+  setText("paymentConfirmCountdown", String(left));
+  bsPaymentConfirmModal.show();
+
+  state.paymentCountdownTimer = window.setInterval(async () => {
+    left -= 1;
+    setText("paymentConfirmCountdown", String(Math.max(0, left)));
+    if (left <= 0) {
+      clearPaymentCountdown();
+      bsPaymentConfirmModal.hide();
+      await markPendingPaymentTimeout();
+    }
+  }, 1000);
+}
+
+function clearPaymentCountdown() {
+  if (state.paymentCountdownTimer) {
+    window.clearInterval(state.paymentCountdownTimer);
+    state.paymentCountdownTimer = null;
+  }
+}
+
+function cancelPendingPaymentConfirmation() {
+  clearPaymentCountdown();
+  state.pendingPayment = null;
+}
+
+async function confirmPendingPaymentNow() {
+  if (!state.pendingPayment) return;
+  const pending = state.pendingPayment;
+  clearPaymentCountdown();
+  bsPaymentConfirmModal.hide();
+  await submitPaymentRequest(pending, false);
+  state.pendingPayment = null;
+}
+
+async function markPendingPaymentTimeout() {
+  if (!state.pendingPayment) return;
+  const pending = state.pendingPayment;
+  await submitPaymentRequest(pending, true);
+  state.pendingPayment = null;
+}
+
+async function submitPaymentRequest(pending, isTimeout) {
+  const { ids, payload, formKey, summary } = pending;
   try {
     const created = await fetchJson("/api/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: state.userId,
-        sourceAccountId: sourceId,
-        destinationAccountId: destinationId,
-        amount,
-        currencyCode,
-        destinationCurrencyCode,
-        paymentType: "NORMAL_PAYMENT",
-        forexConfirmed: involvesUsd
-      })
+      body: JSON.stringify({ ...payload, confirmationTimedOut: isTimeout })
     });
 
     await loadAllData();
+
+    if (isTimeout) {
+      window.alert("Payment Failed - Confirmation timeout.");
+      return;
+    }
 
     if (created.status === "FAILED") {
       const errMsg = created.errorCode || "Payment failed.";
@@ -478,21 +595,25 @@ async function handleCreatePayment(formKey = "modal") {
       ? Number(created.remainingDailyLimit)
       : Number(state.dashboard?.remainingDailyLimit || 0);
     const actualFee = Number(created.forexFee || 0);
-    const actualFinal = Number(created.finalChargedAmount || amount);
-    const actualSourceEquivalent = Number(created.convertedAmount || amount);
+    const actualFinal = Number(created.finalChargedAmount || payload.amount);
+    const actualSourceEquivalent = Number(created.convertedAmount || payload.amount);
     window.alert(
       `✅ Payment Successful!\n\n`
-      + `Destination amount:    ${fmtAmt(created.amount || amount)} ${destinationCurrencyCode}\n`
-      + `Source equivalent:     ${fmtAmt(actualSourceEquivalent)} ${currencyCode}\n`
-      + (isCross ? `Exchange rate:         ${currencyCode}->${destinationCurrencyCode} = ${Number(created.exchangeRate || 1).toFixed(6)}\n` : "")
-      + (actualFee > 0 ? `Forex fee (1.8%):      ${fmtAmt(actualFee)} ${currencyCode}\n` : "")
-      + `Final charged:         ${fmtAmt(actualFinal)} ${currencyCode}\n`
+      + `Destination amount:    ${fmtAmt(created.amount || payload.amount)} ${payload.destinationCurrencyCode}\n`
+      + `Source equivalent:     ${fmtAmt(actualSourceEquivalent)} ${payload.currencyCode}\n`
+      + (summary.isCross ? `Exchange rate:         ${payload.currencyCode}->${payload.destinationCurrencyCode} = ${Number(created.exchangeRate || 1).toFixed(6)}\n` : "")
+      + (actualFee > 0 ? `Forex fee (1.8%):      ${fmtAmt(actualFee)} ${payload.currencyCode}\n` : "")
+      + `Final charged:         ${fmtAmt(actualFinal)} ${payload.currencyCode}\n`
       + `Remaining daily limit: ${fmtAmt(remaining)}`
     );
   } catch (error) {
-    const message = error.message || "Payment failed.";
-    setAlert(ids.alertArea, message, "danger");
-    window.alert(`❌ Payment Failed\n\n${message}`);
+    const message = error && error.message ? error.message : "Payment failed.";
+    if (!isTimeout) {
+      setAlert(ids.alertArea, message, "danger");
+      window.alert(`❌ Payment Failed\n\n${message}`);
+    } else {
+      window.alert("Payment Failed - Confirmation timeout.");
+    }
   }
 }
 
@@ -646,6 +767,43 @@ async function handleDonate(campaignId) {
   }
 }
 
+async function handleReversePayment(paymentId) {
+  const payment = state.payments.find((item) => Number(item.id) === Number(paymentId));
+  if (!payment) return;
+
+  const senderName = accountName(payment.sourceAccountId);
+  const receiverName = accountName(payment.destinationAccountId);
+  const amount = fmtAmt(payment.amount);
+  const currency = payment.destinationCurrencyCode || payment.currencyCode || "";
+  const reference = payment.paymentReference || `#${payment.id}`;
+
+  const confirmed = window.confirm(
+    "Are you sure you want to return this payment to the sender?\n\n"
+    + `Reference: ${reference}\n`
+    + `Original sender: ${senderName}\n`
+    + `Receiver: ${receiverName}\n`
+    + `Amount: ${amount} ${currency}`
+  );
+  if (!confirmed) return;
+
+  const reversalReason = "Returned by receiver";
+  try {
+    await fetchJson(`/api/payments/${paymentId}/reverse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: state.userId, reason: reversalReason })
+    });
+
+    await loadAllData();
+    window.alert("Payment returned successfully. Your balance has been updated.");
+    showToast("Payment reversed", `Reversal created for ${reference}.`, "success");
+  } catch (error) {
+    const message = error.message || "Unable to reverse this payment.";
+    window.alert(`Payment reversal failed.\n\n${message}`);
+    showToast("Reversal failed", message, "danger");
+  }
+}
+
 function openTicketModal(paymentId) {
   state.currentTicketPaymentId = paymentId;
   setVal("ticketPaymentId", String(paymentId));
@@ -752,8 +910,24 @@ async function handleCreateTicket() {
   const issueType = getVal("ticketIssueType");
   const priority = getVal("ticketPriority");
 
-  if (!paymentId || !description.trim()) {
-    setAlert("ticketAlertArea", "Title/description and related transaction are required.", "warning");
+  if (!paymentId) {
+    setAlert("ticketAlertArea", "Related transaction is required.", "warning");
+    return;
+  }
+  if (!title.trim()) {
+    setAlert("ticketAlertArea", "Title is required.", "warning");
+    return;
+  }
+  if (!description.trim()) {
+    setAlert("ticketAlertArea", "Description is required.", "warning");
+    return;
+  }
+  if (!issueType) {
+    setAlert("ticketAlertArea", "Issue type is required.", "warning");
+    return;
+  }
+  if (!priority) {
+    setAlert("ticketAlertArea", "Priority is required.", "warning");
     return;
   }
 
@@ -1052,6 +1226,7 @@ function badgeClass(status) {
     VALIDATED: "badge-validated",
     PROCESSING: "badge-sent",
     COMPLETED: "badge-completed",
+    REVERSED: "badge-cancelled",
     SUCCESS: "badge-success",
     FAILED: "badge-failed",
     CANCELLED: "badge-cancelled"
