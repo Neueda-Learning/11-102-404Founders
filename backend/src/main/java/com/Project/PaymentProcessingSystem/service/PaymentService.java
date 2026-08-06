@@ -72,7 +72,7 @@ public class PaymentService {
 
     public List<Payment> getAllPayments(Long userId) {
         if (userId == null) {
-            return getAllPayments();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User id is required");
         }
         return paymentRepository.findByUserScope(userId);
     }
@@ -186,8 +186,9 @@ public class PaymentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found"));
     }
 
-    public List<PaymentStatusAudit> getPaymentAuditTrail(Long paymentId) {
-        getPaymentById(paymentId);
+    public List<PaymentStatusAudit> getPaymentAuditTrail(Long paymentId, Long userId) {
+        Payment payment = getPaymentById(paymentId);
+        ensurePaymentBelongsToUser(payment, userId);
         return auditRepository.findByPaymentIdOrderByChangedAtAsc(paymentId);
     }
 
@@ -206,7 +207,7 @@ public class PaymentService {
         );
 
         PaymentType normalizedType = normalizePaymentType(request.getPaymentType());
-        boolean usdInvolved = isUsdTransaction(sourceCurrency, destinationCurrency);
+        boolean interCurrencyTransaction = isInterCurrencyTransaction(sourceCurrency, destinationCurrency);
         boolean confirmationTimedOut = Boolean.TRUE.equals(request.getConfirmationTimedOut());
 
         BigDecimal originalAmount = request.getAmount().setScale(2, RoundingMode.HALF_UP);
@@ -214,7 +215,7 @@ public class PaymentService {
         BigDecimal sourceEquivalent = sourceCurrency.equalsIgnoreCase(destinationCurrency)
                 ? originalAmount
                 : originalAmount.divide(exchangeRate, 6, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal forexFee = usdInvolved ? calculateForexFee(sourceEquivalent) : BigDecimal.ZERO;
+        BigDecimal forexFee = interCurrencyTransaction ? calculateForexFee(sourceEquivalent) : BigDecimal.ZERO;
         BigDecimal finalChargedAmount = sourceEquivalent.add(forexFee).setScale(2, RoundingMode.HALF_UP);
 
         if (confirmationTimedOut) {
@@ -229,9 +230,9 @@ public class PaymentService {
             return paymentRepository.save(savedTimeout);
         }
 
-        if (usdInvolved && !Boolean.TRUE.equals(request.getForexConfirmed())) {
+        if (interCurrencyTransaction && !Boolean.TRUE.equals(request.getForexConfirmed())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "International currency transaction detected. A 1.8% forex fee must be confirmed before proceeding.");
+                    "Inter-currency transaction detected. A 1.8% forex fee must be confirmed before proceeding.");
         }
 
         Payment payment = buildBasePayment(source, destination, request, sourceCurrency, destinationCurrency,
@@ -472,7 +473,7 @@ public class PaymentService {
     }
 
     public DashboardAnalyticsResponse getDashboardAnalytics(Long userId) {
-        List<Payment> payments = getAllPayments(userId);
+        List<Payment> payments = userId == null ? paymentRepository.findAll() : getAllPayments(userId);
         List<Account> scopedAccounts = userId == null ? accountService.getAllAccounts() : accountService.getAccountsByUserId(userId);
 
         long total = payments.size();
@@ -760,12 +761,15 @@ public class PaymentService {
     }
 
     private void settleCampaignBucket(CrowdfundingCampaign campaign) {
-        if (campaign == null || campaign.getBucketAccountId() == null || campaign.getCreatorPayoutAccountId() == null) {
+        if (campaign == null || campaign.getBucketAccountId() == null) {
             return;
         }
 
         Account bucket = accountService.getAccountById(campaign.getBucketAccountId());
-        Account payout = accountService.getAccountById(campaign.getCreatorPayoutAccountId());
+        Account payout = resolveCampaignPayoutAccount(campaign, bucket);
+        if (payout == null) {
+            return;
+        }
         BigDecimal bucketBalance = bucket.getBalance() == null ? BigDecimal.ZERO : bucket.getBalance().setScale(2, RoundingMode.HALF_UP);
         if (bucketBalance.compareTo(BigDecimal.ZERO) <= 0) {
             return;
@@ -783,7 +787,7 @@ public class PaymentService {
         settlement.setAmount(destinationAmount);
         settlement.setCurrencyCode(sourceCurrency);
         settlement.setDestinationCurrencyCode(destinationCurrency);
-        settlement.setPaymentType(PaymentType.NORMAL_PAYMENT);
+        settlement.setPaymentType(PaymentType.CROWDFUNDING_PAYMENT);
         settlement.setCrowdfundingCampaignId(campaign.getId());
         settlement.setStatus(PaymentStatus.CREATED);
         settlement.setIdempotencyKey("campaign-settlement-" + campaign.getId() + "-" + LocalDate.now());
@@ -808,6 +812,33 @@ public class PaymentService {
         saved.setCompletedAt(LocalDateTime.now());
         saved.setErrorCode(null);
         paymentRepository.save(saved);
+    }
+
+    private Account resolveCampaignPayoutAccount(CrowdfundingCampaign campaign, Account bucket) {
+        if (campaign.getCreatorPayoutAccountId() != null) {
+            try {
+                return accountService.getAccountById(campaign.getCreatorPayoutAccountId());
+            } catch (ResponseStatusException ex) {
+                // Fallback to owner accounts when legacy payout id is stale.
+            }
+        }
+
+        if (bucket == null || bucket.getUser() == null || bucket.getUser().getId() == null) {
+            return null;
+        }
+
+        Account resolved = accountService.getAccountsByUserId(bucket.getUser().getId()).stream()
+                .filter(account -> !account.getId().equals(bucket.getId()))
+                .filter(account -> account.getAccountStatus() == AccountStatus.ACTIVE)
+                .filter(account -> !Boolean.TRUE.equals(account.getIsBucketAccount()))
+                .findFirst()
+                .orElse(null);
+
+        if (resolved != null) {
+            campaign.setCreatorPayoutAccountId(resolved.getId());
+            campaignRepository.save(campaign);
+        }
+        return resolved;
     }
 
     private PaymentType normalizePaymentType(PaymentType paymentType) {
@@ -849,8 +880,23 @@ public class PaymentService {
         return normalized;
     }
 
-    private boolean isUsdTransaction(String sourceCurrency, String destinationCurrency) {
-        return "USD".equalsIgnoreCase(sourceCurrency) || "USD".equalsIgnoreCase(destinationCurrency);
+    private boolean isInterCurrencyTransaction(String sourceCurrency, String destinationCurrency) {
+        return sourceCurrency != null && destinationCurrency != null
+                && !sourceCurrency.equalsIgnoreCase(destinationCurrency);
+    }
+
+    private void ensurePaymentBelongsToUser(Payment payment, Long userId) {
+        if (userId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User id is required");
+        }
+        Set<Long> userAccountIds = accountService.getAccountsByUserId(userId).stream()
+                .map(Account::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        boolean belongsToUser = userAccountIds.contains(payment.getSourceAccountId())
+                || userAccountIds.contains(payment.getDestinationAccountId());
+        if (!belongsToUser) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found");
+        }
     }
 
     private BigDecimal resolveExchangeRate(String fromCurrency, String toCurrency) {

@@ -18,7 +18,7 @@ public class DashboardController {
     }
 
     @GetMapping("/analytics")
-    public DashboardAnalyticsResponse getAnalytics(@RequestParam(required = false) Long userId) {
+    public DashboardAnalyticsResponse getAnalytics(@RequestParam Long userId) {
         return paymentService.getDashboardAnalytics(userId);
     }
 }
