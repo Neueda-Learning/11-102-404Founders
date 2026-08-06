@@ -4,7 +4,7 @@
 
 const API_BASE = (window.PAYMENT_API_BASE ||
                   localStorage.getItem("PAYMENT_API_BASE") ||
-                  "http://localhost:8080").replace(/\/$/, "");
+                  "http://localhost:8082").replace(/\/$/, "");
 const THEME_KEY = "PPS_THEME";
 const ACCOUNT_KEY = "PPS_SELECTED_ACCOUNT";
 const SUPPORTED_UI_CURRENCIES = ["INR", "USD"];

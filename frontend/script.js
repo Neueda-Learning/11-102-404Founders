@@ -1,4 +1,4 @@
-const API_BASE = (window.PAYMENT_API_BASE || window.localStorage.getItem("PAYMENT_API_BASE") || "http://localhost:8080").replace(/\/$/, "");
+const API_BASE = (window.PAYMENT_API_BASE || window.localStorage.getItem("PAYMENT_API_BASE") || "http://localhost:8082").replace(/\/$/, "");
 const THEME_KEY = "PPS_THEME";
 
 const state = {

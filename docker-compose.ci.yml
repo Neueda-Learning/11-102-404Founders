@@ -1,0 +1,5 @@
+services:
+  mysql:
+    # CI should use internal Docker networking; avoid host port conflicts on shared agents.
+    ports: []
+

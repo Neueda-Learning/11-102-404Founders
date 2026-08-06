@@ -2,13 +2,15 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'REPO_URL', defaultValue: '', description: 'Optional: Git repository URL for standalone Pipeline jobs')
+        string(name: 'REPO_URL', defaultValue: 'https://github.com/Neueda-Learning/11-102-404Founders.git', description: 'Git repository URL for standalone Pipeline jobs')
         string(name: 'REPO_BRANCH', defaultValue: 'main', description: 'Branch to checkout when REPO_URL is provided')
         string(name: 'GIT_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins credentials ID for private repositories')
     }
 
     environment {
         COMPOSE_FILE = 'docker-compose.yml'
+        COMPOSE_CI_FILE = 'docker-compose.ci.yml'
+        COMPOSE_FILES = '-f docker-compose.yml'
         BACKEND_DIR = 'backend'
     }
 
@@ -18,16 +20,20 @@ pipeline {
                 script {
                     if (binding.hasVariable('scm') && scm) {
                         checkout scm
-                    } else if (params.REPO_URL?.trim()) {
-                        if (params.GIT_CREDENTIALS_ID?.trim()) {
-                            git branch: params.REPO_BRANCH, url: params.REPO_URL, credentialsId: params.GIT_CREDENTIALS_ID
-                        } else {
-                            git branch: params.REPO_BRANCH, url: params.REPO_URL
-                        }
-                    } else if (fileExists('backend/pom.xml')) {
-                        echo 'No SCM context detected. Using existing workspace content.'
                     } else {
-                        error('No SCM context available. Configure this job as Multibranch/Pipeline from SCM or provide REPO_URL parameter.')
+                        def sourceUrl = params.REPO_URL?.trim() ?: env.GIT_URL?.trim()
+
+                        if (sourceUrl) {
+                            if (params.GIT_CREDENTIALS_ID?.trim()) {
+                                git branch: params.REPO_BRANCH, url: sourceUrl, credentialsId: params.GIT_CREDENTIALS_ID
+                            } else {
+                                git branch: params.REPO_BRANCH, url: sourceUrl
+                            }
+                        } else if (fileExists('backend/pom.xml')) {
+                            echo 'No SCM context detected. Using existing workspace content.'
+                        } else {
+                            error('No SCM context available and no repository URL provided. Set REPO_URL (or env.GIT_URL), or configure this job as Multibranch/Pipeline from SCM.')
+                        }
                     }
                 }
             }
@@ -45,13 +51,60 @@ pipeline {
             }
         }
 
+        stage('Resolve Compose Command') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        def hasComposeV2 = sh(script: 'docker compose version >/dev/null 2>&1', returnStatus: true) == 0
+                        if (hasComposeV2) {
+                            env.DOCKER_COMPOSE_CMD = 'docker compose'
+                        } else {
+                            def hasComposeV1 = sh(script: 'docker-compose --version >/dev/null 2>&1', returnStatus: true) == 0
+                            if (hasComposeV1) {
+                                env.DOCKER_COMPOSE_CMD = 'docker-compose'
+                            } else {
+                                error('Neither `docker compose` nor `docker-compose` is available on this Jenkins agent.')
+                            }
+                        }
+                    } else {
+                        def hasComposeV2 = bat(script: 'docker compose version >NUL 2>&1', returnStatus: true) == 0
+                        if (hasComposeV2) {
+                            env.DOCKER_COMPOSE_CMD = 'docker compose'
+                        } else {
+                            def hasComposeV1 = bat(script: 'docker-compose --version >NUL 2>&1', returnStatus: true) == 0
+                            if (hasComposeV1) {
+                                env.DOCKER_COMPOSE_CMD = 'docker-compose'
+                            } else {
+                                error('Neither `docker compose` nor `docker-compose` is available on this Jenkins agent.')
+                            }
+                        }
+                    }
+
+                    if (!fileExists(env.COMPOSE_FILE)) {
+                        error("Compose file not found: ${env.COMPOSE_FILE}")
+                    }
+
+                    // Use CI override only when present in checked-out source.
+                    if (fileExists(env.COMPOSE_CI_FILE)) {
+                        env.COMPOSE_FILES = "-f ${env.COMPOSE_FILE} -f ${env.COMPOSE_CI_FILE}"
+                    } else {
+                        env.COMPOSE_FILES = "-f ${env.COMPOSE_FILE}"
+                        echo "Optional compose override not found: ${env.COMPOSE_CI_FILE}. Continuing with ${env.COMPOSE_FILE}."
+                    }
+
+                    echo "Using Compose command: ${env.DOCKER_COMPOSE_CMD}"
+                    echo "Using compose files: ${env.COMPOSE_FILES}"
+                }
+            }
+        }
+
         stage('Stop Existing Containers') {
             steps {
                 script {
                     if (isUnix()) {
-                        sh 'docker compose -f docker-compose.yml down || true'
+                        sh "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} down || true"
                     } else {
-                        bat 'docker compose -f docker-compose.yml down'
+                        bat "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} down"
                     }
                 }
             }
@@ -61,9 +114,9 @@ pipeline {
             steps {
                 script {
                     if (isUnix()) {
-                        sh 'docker compose -f docker-compose.yml build --no-cache'
+                        sh "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} build --no-cache"
                     } else {
-                        bat 'docker compose -f docker-compose.yml build --no-cache'
+                        bat "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} build --no-cache"
                     }
                 }
             }
@@ -73,9 +126,9 @@ pipeline {
             steps {
                 script {
                     if (isUnix()) {
-                        sh 'docker compose -f docker-compose.yml up -d'
+                        sh "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} up -d"
                     } else {
-                        bat 'docker compose -f docker-compose.yml up -d'
+                        bat "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} up -d"
                     }
                 }
             }
@@ -85,9 +138,9 @@ pipeline {
             steps {
                 script {
                     if (isUnix()) {
-                        sh 'docker compose -f docker-compose.yml ps'
+                        sh "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} ps"
                     } else {
-                        bat 'docker compose -f docker-compose.yml ps'
+                        bat "${env.DOCKER_COMPOSE_CMD} ${env.COMPOSE_FILES} ps"
                     }
                 }
             }
