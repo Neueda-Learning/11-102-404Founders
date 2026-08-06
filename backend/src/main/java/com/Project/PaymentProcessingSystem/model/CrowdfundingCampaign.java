@@ -37,6 +37,9 @@ public class CrowdfundingCampaign {
     @Column(name = "bucket_account_id", nullable = false)
     private Long bucketAccountId;
 
+    @Column(name = "creator_payout_account_id")
+    private Long creatorPayoutAccountId;
+
     @Column(name = "target_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal targetAmount;
 
@@ -105,6 +108,14 @@ public class CrowdfundingCampaign {
 
     public void setBucketAccountId(Long bucketAccountId) {
         this.bucketAccountId = bucketAccountId;
+    }
+
+    public Long getCreatorPayoutAccountId() {
+        return creatorPayoutAccountId;
+    }
+
+    public void setCreatorPayoutAccountId(Long creatorPayoutAccountId) {
+        this.creatorPayoutAccountId = creatorPayoutAccountId;
     }
 
     public BigDecimal getTargetAmount() {

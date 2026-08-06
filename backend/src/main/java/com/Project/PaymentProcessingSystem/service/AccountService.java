@@ -14,6 +14,8 @@ import java.util.List;
 @Service
 public class AccountService {
 
+    private static final java.util.Set<String> SUPPORTED_CURRENCIES = java.util.Set.of("INR", "USD");
+
     private final AccountRepository accountRepository;
     private final UserService userService;
 
@@ -52,6 +54,8 @@ public class AccountService {
                 account.setAccountHolderName(user.getFullName());
             }
         }
+        validateCurrency(account.getCurrencyCode());
+        account.setCurrencyCode(account.getCurrencyCode().trim().toUpperCase());
         return accountRepository.save(account);
     }
 
@@ -71,7 +75,10 @@ public class AccountService {
     public Account updateAccount(Long id, Account updated) {
         Account existing = getAccountById(id);
         if (updated.getAccountHolderName() != null) existing.setAccountHolderName(updated.getAccountHolderName());
-        if (updated.getCurrencyCode() != null) existing.setCurrencyCode(updated.getCurrencyCode());
+        if (updated.getCurrencyCode() != null) {
+            validateCurrency(updated.getCurrencyCode());
+            existing.setCurrencyCode(updated.getCurrencyCode().trim().toUpperCase());
+        }
         if (updated.getBalance() != null) existing.setBalance(updated.getBalance());
         if (updated.getAccountStatus() != null) existing.setAccountStatus(updated.getAccountStatus());
         if (updated.getMaxDailyLimit() != null) existing.setMaxDailyLimit(updated.getMaxDailyLimit());
@@ -95,5 +102,15 @@ public class AccountService {
 
     public void deleteAccount(Long id) {
         accountRepository.delete(getAccountById(id));
+    }
+
+    private void validateCurrency(String currencyCode) {
+        if (currencyCode == null || currencyCode.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account currency is required");
+        }
+        String normalized = currencyCode.trim().toUpperCase();
+        if (!SUPPORTED_CURRENCIES.contains(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only INR and USD accounts are supported");
+        }
     }
 }

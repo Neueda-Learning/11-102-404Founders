@@ -14,6 +14,7 @@ import com.Project.PaymentProcessingSystem.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,6 +60,23 @@ public class UserController {
 	@PostMapping
 	public ResponseEntity<User> createUser(@RequestBody User user) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(user));
+	}
+
+	@PatchMapping("/{id}/daily-limit")
+	public User updateDailyLimit(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+		Object rawValue = payload.get("dailyTransactionLimit");
+		if (rawValue == null) {
+			throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"dailyTransactionLimit is required");
+		}
+		java.math.BigDecimal limit;
+		try {
+			limit = new java.math.BigDecimal(String.valueOf(rawValue));
+		} catch (NumberFormatException ex) {
+			throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"dailyTransactionLimit must be numeric");
+		}
+		return userService.updateDailyTransactionLimit(id, limit);
 	}
 
 	@GetMapping("/{id}/accounts")

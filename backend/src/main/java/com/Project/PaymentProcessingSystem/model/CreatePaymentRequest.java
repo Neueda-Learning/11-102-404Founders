@@ -15,6 +15,7 @@ public class CreatePaymentRequest {
     private Long userId;
     private String sourceAccountNumber;
     private String destinationAccountNumber;
+    private Boolean forexConfirmed;
 
     public CreatePaymentRequest() {
     }
@@ -105,6 +106,14 @@ public class CreatePaymentRequest {
 
     public void setDestinationAccountNumber(String destinationAccountNumber) {
         this.destinationAccountNumber = destinationAccountNumber;
+    }
+
+    public Boolean getForexConfirmed() {
+        return forexConfirmed;
+    }
+
+    public void setForexConfirmed(Boolean forexConfirmed) {
+        this.forexConfirmed = forexConfirmed;
     }
 }
 

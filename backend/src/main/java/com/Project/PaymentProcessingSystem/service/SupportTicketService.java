@@ -1,11 +1,14 @@
 package com.Project.PaymentProcessingSystem.service;
 
+import com.Project.PaymentProcessingSystem.model.Account;
 import com.Project.PaymentProcessingSystem.model.DisputeRole;
 import com.Project.PaymentProcessingSystem.model.DisputeTicketRequest;
+import com.Project.PaymentProcessingSystem.model.Payment;
 import com.Project.PaymentProcessingSystem.model.SupportTicket;
 import com.Project.PaymentProcessingSystem.model.TicketPriority;
 import com.Project.PaymentProcessingSystem.model.TicketStatus;
 import com.Project.PaymentProcessingSystem.model.TicketType;
+import com.Project.PaymentProcessingSystem.model.TransactionTicketRequest;
 import com.Project.PaymentProcessingSystem.repository.SupportTicketRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -190,6 +193,74 @@ public class SupportTicketService {
         ticket.setDisputeRole(request.getDisputeRole());
         ticket.setRecoveryRequested(request.getRecoveryRequested() != null ? request.getRecoveryRequested() : Boolean.TRUE);
         ticket.setCreatedAt(LocalDateTime.now());
+        return supportTicketRepository.save(ticket);
+    }
+
+    public SupportTicket createTransactionTicket(Long paymentId, TransactionTicketRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ticket payload is required");
+        }
+        if (request.getUserId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User id is required");
+        }
+
+        Payment payment = paymentService.getPaymentById(paymentId);
+        Account source = accountService.getAccountById(payment.getSourceAccountId());
+        if (source.getUser() == null || source.getUser().getId() == null
+                || !source.getUser().getId().equals(request.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Payment does not belong to the requesting user");
+        }
+
+        if (request.getDescription() == null || request.getDescription().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Description is required");
+        }
+
+        SupportTicket ticket = new SupportTicket();
+        ticket.setTicketNumber(generateTicketNumber());
+        ticket.setPaymentId(paymentId);
+        ticket.setAccountId(source.getId());
+        ticket.setUserId(request.getUserId());
+        ticket.setTitle((request.getTitle() == null || request.getTitle().isBlank())
+                ? "Issue for " + payment.getPaymentReference()
+                : request.getTitle().trim());
+        ticket.setDescription(request.getDescription().trim());
+        ticket.setPriority(request.getPriority() == null ? TicketPriority.MEDIUM : request.getPriority());
+        ticket.setStatus(TicketStatus.OPEN);
+        ticket.setTicketType(request.getIssueType() == null ? TicketType.OTHER : request.getIssueType());
+        ticket.setDisputeRole(DisputeRole.NONE);
+        ticket.setRecoveryRequested(Boolean.FALSE);
+        ticket.setFailureReason(payment.getErrorCode());
+        ticket.setCreatedAt(LocalDateTime.now());
+        return supportTicketRepository.save(ticket);
+    }
+
+    public SupportTicket updateTicket(Long ticketId, SupportTicket updates) {
+        if (updates == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ticket payload is required");
+        }
+        SupportTicket ticket = getTicketById(ticketId);
+        if (updates.getTitle() != null && !updates.getTitle().isBlank()) {
+            ticket.setTitle(updates.getTitle().trim());
+        }
+        if (updates.getDescription() != null && !updates.getDescription().isBlank()) {
+            ticket.setDescription(updates.getDescription().trim());
+        }
+        if (updates.getPriority() != null) {
+            ticket.setPriority(updates.getPriority());
+        }
+        if (updates.getTicketType() != null) {
+            ticket.setTicketType(updates.getTicketType());
+        }
+        if (updates.getStatus() != null) {
+            ticket.setStatus(updates.getStatus());
+            if (updates.getStatus() == TicketStatus.RESOLVED || updates.getStatus() == TicketStatus.CLOSED) {
+                ticket.setResolvedAt(LocalDateTime.now());
+            }
+        }
+        if (updates.getResolutionSummary() != null) {
+            ticket.setResolutionSummary(updates.getResolutionSummary());
+        }
         return supportTicketRepository.save(ticket);
     }
 

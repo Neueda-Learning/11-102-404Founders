@@ -4,6 +4,7 @@ import com.Project.PaymentProcessingSystem.model.DisputeTicketRequest;
 import com.Project.PaymentProcessingSystem.model.SupportTicket;
 import com.Project.PaymentProcessingSystem.model.TicketStatus;
 import com.Project.PaymentProcessingSystem.model.TicketType;
+import com.Project.PaymentProcessingSystem.model.TransactionTicketRequest;
 import com.Project.PaymentProcessingSystem.service.SupportTicketService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,6 +54,18 @@ public class SupportTicketController {
     public ResponseEntity<SupportTicket> createDisputeTicket(@RequestBody DisputeTicketRequest request) {
         SupportTicket created = supportTicketService.createDisputeTicket(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PostMapping("/payments/{paymentId}")
+    public ResponseEntity<SupportTicket> createTransactionTicket(@PathVariable Long paymentId,
+                                                                 @RequestBody TransactionTicketRequest request) {
+        SupportTicket created = supportTicketService.createTransactionTicket(paymentId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PutMapping("/{id}")
+    public SupportTicket updateTicket(@PathVariable Long id, @RequestBody SupportTicket ticket) {
+        return supportTicketService.updateTicket(id, ticket);
     }
 
     @PatchMapping("/{id}/status")

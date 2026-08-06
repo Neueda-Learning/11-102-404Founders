@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,4 +35,16 @@ public interface PaymentRepository extends JpaRepository<@NonNull Payment, @NonN
 			""")
 	List<Payment> findByUserScopeAndStatusIn(@Param("userId") Long userId,
 	                                         @Param("statuses") Collection<PaymentStatus> statuses);
+
+	@Query("""
+			select coalesce(sum(coalesce(p.finalChargedAmount, p.amount)), 0)
+			from Payment p
+			where p.sourceAccountId in (select a.id from Account a where a.user.id = :userId)
+			  and p.status = com.Project.PaymentProcessingSystem.model.PaymentStatus.COMPLETED
+			  and p.createdAt >= :dayStart
+			  and p.createdAt < :dayEnd
+			""")
+	BigDecimal sumCompletedOutgoingChargedAmountForUser(@Param("userId") Long userId,
+	                                                   @Param("dayStart") LocalDateTime dayStart,
+	                                                   @Param("dayEnd") LocalDateTime dayEnd);
 }

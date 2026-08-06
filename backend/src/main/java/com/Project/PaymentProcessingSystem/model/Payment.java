@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -50,7 +51,7 @@ public class Payment {
     @Column(nullable = false)
     private PaymentStatus status = PaymentStatus.CREATED;
 
-    @Column(name = "error_code", length = 50)
+    @Column(name = "error_code", length = 255)
     private String errorCode;
 
     @Column(name = "idempotency_key", length = 120)
@@ -62,11 +63,20 @@ public class Payment {
     @Column(name = "converted_amount", precision = 15, scale = 2)
     private BigDecimal convertedAmount;
 
+    @Column(name = "exchange_rate", precision = 15, scale = 6)
+    private BigDecimal exchangeRate;
+
+    @Column(name = "final_charged_amount", precision = 15, scale = 2)
+    private BigDecimal finalChargedAmount;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
+
+    @Transient
+    private BigDecimal remainingDailyLimit;
 
     public Payment() {}
 
@@ -112,9 +122,18 @@ public class Payment {
     public BigDecimal getConvertedAmount() { return convertedAmount; }
     public void setConvertedAmount(BigDecimal convertedAmount) { this.convertedAmount = convertedAmount; }
 
+    public BigDecimal getExchangeRate() { return exchangeRate; }
+    public void setExchangeRate(BigDecimal exchangeRate) { this.exchangeRate = exchangeRate; }
+
+    public BigDecimal getFinalChargedAmount() { return finalChargedAmount; }
+    public void setFinalChargedAmount(BigDecimal finalChargedAmount) { this.finalChargedAmount = finalChargedAmount; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
     public LocalDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+
+    public BigDecimal getRemainingDailyLimit() { return remainingDailyLimit; }
+    public void setRemainingDailyLimit(BigDecimal remainingDailyLimit) { this.remainingDailyLimit = remainingDailyLimit; }
 }

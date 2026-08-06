@@ -10,6 +10,7 @@ import com.Project.PaymentProcessingSystem.model.CrowdfundingCampaign;
 import com.Project.PaymentProcessingSystem.model.Payment;
 import com.Project.PaymentProcessingSystem.model.PaymentType;
 import com.Project.PaymentProcessingSystem.repository.CrowdfundingCampaignRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,9 +21,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class CrowdfundingCampaignService {
+
+    private static final java.util.Set<String> SUPPORTED_CURRENCIES = java.util.Set.of("INR", "USD");
 
     private final CrowdfundingCampaignRepository campaignRepository;
     private final AccountService accountService;
@@ -49,6 +54,7 @@ public class CrowdfundingCampaignService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found"));
     }
 
+    @Transactional
     public CrowdfundingCampaign createCampaign(CrowdfundingCampaign campaign) {
         if (campaign == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign payload is required");
@@ -56,8 +62,11 @@ public class CrowdfundingCampaignService {
         if (campaign.getCampaignName() == null || campaign.getCampaignName().trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign name is required");
         }
-        if (campaign.getBucketAccountId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bucket account id is required");
+        Long payoutAccountId = campaign.getCreatorPayoutAccountId() != null
+                ? campaign.getCreatorPayoutAccountId()
+                : campaign.getBucketAccountId();
+        if (payoutAccountId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Creator payout account id is required");
         }
         if (campaign.getTargetAmount() == null || campaign.getTargetAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Target amount must be greater than zero");
@@ -69,9 +78,9 @@ public class CrowdfundingCampaignService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign deadline must be today or a future date");
         }
 
-        Account bucketAccount = accountService.getAccountById(campaign.getBucketAccountId());
-        if (bucketAccount.getAccountStatus() != AccountStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bucket account must be active");
+        Account payoutAccount = accountService.getAccountById(payoutAccountId);
+        if (payoutAccount.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Creator payout account must be active");
         }
 
         if (campaign.getCurrentAmount() == null) {
@@ -85,11 +94,33 @@ public class CrowdfundingCampaignService {
         }
         if (campaign.getTargetCurrency() != null) {
             campaign.setTargetCurrency(campaign.getTargetCurrency().trim().toUpperCase());
+            if (!SUPPORTED_CURRENCIES.contains(campaign.getTargetCurrency())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only INR and USD campaigns are supported");
+            }
+        } else {
+            campaign.setTargetCurrency(payoutAccount.getCurrencyCode() == null
+                    ? "INR"
+                    : payoutAccount.getCurrencyCode().trim().toUpperCase(Locale.ROOT));
         }
         if (campaign.getCreatedAt() == null) {
             campaign.setCreatedAt(LocalDateTime.now());
         }
+        // Dedicated bucket wallet per campaign.
+        Account bucket = new Account();
+        bucket.setUser(payoutAccount.getUser());
+        bucket.setAccountHolderName((campaign.getCampaignName() == null ? "Campaign" : campaign.getCampaignName()) + " Bucket");
+        bucket.setCurrencyCode(campaign.getTargetCurrency());
+        bucket.setBalance(BigDecimal.ZERO);
+        bucket.setAccountStatus(AccountStatus.ACTIVE);
+        bucket.setIsBucketAccount(Boolean.TRUE);
+        bucket.setAccountType("Campaign Bucket");
+        bucket.setBankName(payoutAccount.getBankName() == null ? "PayFlow Campaign Vault" : payoutAccount.getBankName());
+        bucket.setBankIfsc(payoutAccount.getBankIfsc());
+        bucket.setAccountNumber("CB" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(Locale.ROOT));
+        Account createdBucket = accountService.createAccount(bucket);
 
+        campaign.setBucketAccountId(createdBucket.getId());
+        campaign.setCreatorPayoutAccountId(payoutAccount.getId());
         return campaignRepository.save(campaign);
     }
 
@@ -126,22 +157,6 @@ public class CrowdfundingCampaignService {
 
     public Payment contributeToCampaign(Long campaignId, CampaignContributionRequest request) {
         CrowdfundingCampaign campaign = getCampaignById(campaignId);
-        if (campaign.getStatus() != CampaignStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only ACTIVE campaigns accept contributions");
-        }
-        if (campaign.getCampaignEndDate() != null && campaign.getCampaignEndDate().isBefore(LocalDate.now())) {
-            campaign.setStatus(CampaignStatus.CANCELLED);
-            campaignRepository.save(campaign);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign has ended");
-        }
-
-        BigDecimal currentAmount = campaign.getCurrentAmount() == null ? BigDecimal.ZERO : campaign.getCurrentAmount();
-        BigDecimal targetAmount = campaign.getTargetAmount() == null ? BigDecimal.ZERO : campaign.getTargetAmount();
-        if (targetAmount.compareTo(BigDecimal.ZERO) > 0 && currentAmount.compareTo(targetAmount) >= 0) {
-            campaign.setStatus(CampaignStatus.COMPLETED);
-            campaignRepository.save(campaign);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campaign target has been reached");
-        }
 
         CreatePaymentRequest paymentRequest = new CreatePaymentRequest();
         paymentRequest.setSourceAccountId(request.getSourceAccountId());
@@ -153,6 +168,7 @@ public class CrowdfundingCampaignService {
         paymentRequest.setCrowdfundingCampaignId(campaignId);
         paymentRequest.setIdempotencyKey(request.getIdempotencyKey());
         paymentRequest.setUserId(request.getUserId());
+        paymentRequest.setForexConfirmed(request.getForexConfirmed());
         return paymentService.createPayment(paymentRequest);
     }
 }

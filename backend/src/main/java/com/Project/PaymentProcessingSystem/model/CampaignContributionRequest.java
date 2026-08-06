@@ -9,6 +9,7 @@ public class CampaignContributionRequest {
     private String currencyCode;
     private String idempotencyKey;
     private Long userId;
+    private Boolean forexConfirmed;
 
     public Long getSourceAccountId() {
         return sourceAccountId;
@@ -48,6 +49,14 @@ public class CampaignContributionRequest {
 
     public void setUserId(Long userId) {
         this.userId = userId;
+    }
+
+    public Boolean getForexConfirmed() {
+        return forexConfirmed;
+    }
+
+    public void setForexConfirmed(Boolean forexConfirmed) {
+        this.forexConfirmed = forexConfirmed;
     }
 }
 
