@@ -295,12 +295,59 @@
             <div class="pf-avatar-sm" style="background:var(--pf-green-grad)">
               <i class="bi bi-people-fill" style="font-size:.8rem"></i>
             </div>
-            <h5 class="modal-title fw-bold mb-0">Active Campaigns</h5>
+            <h5 class="modal-title fw-bold mb-0">Crowdfunding</h5>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <div id="campaignsAlertArea"></div>
+
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <button type="button" class="btn btn-success rounded-pill px-3" id="crowdfundingDonateModeBtn">
+              <i class="bi bi-heart-fill me-1"></i>Donate to Campaign
+            </button>
+            <button type="button" class="btn btn-outline-success rounded-pill px-3" id="crowdfundingCreateModeBtn">
+              <i class="bi bi-plus-circle me-1"></i>Create New Campaign
+            </button>
+          </div>
+
+          <div id="createCampaignSection" class="d-none">
+            <form id="createCampaignForm" novalidate autocomplete="off">
+              <div class="mb-2">
+                <label class="form-label fw-semibold small mb-1">Campaign Name</label>
+                <input type="text" class="form-control" id="campaignNameInput" placeholder="e.g. Medical Support Fund" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label fw-semibold small mb-1">Description</label>
+                <textarea class="form-control" id="campaignDescriptionInput" rows="2" placeholder="Tell people what this campaign is for"></textarea>
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-sm-7">
+                  <label class="form-label fw-semibold small mb-1">Target Amount</label>
+                  <input type="number" class="form-control" id="campaignTargetAmountInput" min="0.01" step="0.01" placeholder="1000.00" required>
+                </div>
+                <div class="col-sm-5">
+                  <label class="form-label fw-semibold small mb-1">Target Currency</label>
+                  <select class="form-select" id="campaignTargetCurrencyInput">
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="INR">INR</option>
+                  </select>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold small mb-1">Campaign End Date</label>
+                <input type="date" class="form-control" id="campaignEndDateInput" required>
+              </div>
+              <div class="d-flex justify-content-end">
+                <button type="button" class="btn btn-success rounded-pill px-4" id="createCampaignBtn">
+                  <i class="bi bi-plus-circle me-1"></i>Create Campaign
+                </button>
+              </div>
+            </form>
+            <hr class="my-3" style="border-color:var(--pf-border)">
+          </div>
 
           <div id="campaignsLoadingState" class="text-center py-5">
             <div class="spinner-border text-success mb-3" role="status"></div>
@@ -312,6 +359,9 @@
           <div id="campaignsEmptyState" class="text-center py-5 d-none">
             <i class="bi bi-emoji-neutral display-3 text-muted mb-3 d-block"></i>
             <h6 class="text-muted">No active campaigns at the moment</h6>
+            <button type="button" class="btn btn-outline-success rounded-pill mt-2" id="emptyStateCreateCampaignBtn">
+              <i class="bi bi-plus-circle me-1"></i>Create One Now
+            </button>
           </div>
         </div>
       </div>
