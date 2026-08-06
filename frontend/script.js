@@ -636,7 +636,7 @@ async function renderPaymentHistory(paymentId) {
   const timeline = document.getElementById("auditTimeline");
   timeline.innerHTML = "<li><small>Loading timeline...</small></li>";
   try {
-    const history = await fetchJson(`/api/payments/${paymentId}/history`);
+    const history = await fetchJson(`/api/payments/${paymentId}/history?userId=${encodeURIComponent(state.selectedUserId)}`);
     if (!Array.isArray(history) || !history.length) {
       timeline.innerHTML = "<li><small>No status transitions recorded.</small></li>";
       return;

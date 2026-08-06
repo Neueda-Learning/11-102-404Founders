@@ -103,7 +103,7 @@ function bindUi() {
 
   [
     "referenceFilter", "senderFilter", "receiverFilter", "statusFilter", "paymentTypeFilter", "currencyFilter",
-    "fromDateFilter", "toDateFilter", "dateFilter", "minAmountFilter", "maxAmountFilter", "timeWindowFilter"
+    "minAmountFilter", "maxAmountFilter"
   ].forEach((id) => {
     document.getElementById(id)?.addEventListener("input", loadPaymentsByFilter);
     document.getElementById(id)?.addEventListener("change", loadPaymentsByFilter);
@@ -111,7 +111,7 @@ function bindUi() {
 
   ["modal", "inline"].forEach((key) => {
     const ids = PAYMENT_FORM_IDS[key];
-    document.getElementById(ids.source)?.addEventListener("change", () => syncPaymentCurrencies(key));
+    document.getElementById(ids.source)?.addEventListener("change", () => syncPaymentCurrencies(key, true));
     document.getElementById(ids.destination)?.addEventListener("change", () => syncPaymentCurrencies(key));
   });
 }
@@ -176,10 +176,6 @@ async function loadPaymentsByFilter() {
     setIfValue(params, "receiverName", getVal("receiverFilter"));
     setIfValue(params, "currency", getVal("currencyFilter"));
     setIfValue(params, "paymentType", getVal("paymentTypeFilter"));
-    setIfValue(params, "timeWindow", getVal("timeWindowFilter"));
-    setIfValue(params, "fromDate", getVal("fromDateFilter"));
-    setIfValue(params, "toDate", getVal("toDateFilter"));
-    setIfValue(params, "date", getVal("dateFilter"));
     setIfValue(params, "minAmount", getVal("minAmountFilter"));
     setIfValue(params, "maxAmount", getVal("maxAmountFilter"));
 
@@ -250,29 +246,33 @@ function populatePaymentDropdowns() {
 function refreshDestinationOptions(sourceId, destinationSelectId) {
   const destSelect = document.getElementById(destinationSelectId);
   if (!destSelect) return;
+  const previousSelection = destSelect.value;
   destSelect.innerHTML = "";
   state.allAccounts
     .filter((account) => Number(account.id) !== Number(sourceId) && String(account.accountStatus || "").toUpperCase() === "ACTIVE")
     .forEach((account) => {
       destSelect.insertAdjacentHTML("beforeend", `<option value="${account.id}">${account.id} - ${esc(account.accountHolderName)} (${account.currencyCode})</option>`);
     });
+  if ([...destSelect.options].some((option) => option.value === previousSelection)) {
+    destSelect.value = previousSelection;
+  }
 }
 
-function syncPaymentCurrencies(formKey) {
+function syncPaymentCurrencies(formKey, refreshDestination = false) {
   if (formKey) {
-    syncPaymentCurrenciesFor(formKey);
+    syncPaymentCurrenciesFor(formKey, refreshDestination);
     return;
   }
-  syncPaymentCurrenciesFor("modal");
-  syncPaymentCurrenciesFor("inline");
+  syncPaymentCurrenciesFor("modal", refreshDestination);
+  syncPaymentCurrenciesFor("inline", refreshDestination);
 }
 
-function syncPaymentCurrenciesFor(formKey) {
+function syncPaymentCurrenciesFor(formKey, refreshDestination = false) {
   const ids = PAYMENT_FORM_IDS[formKey] || PAYMENT_FORM_IDS.modal;
   const sourceId = Number(getVal(ids.source));
   const destinationId = Number(getVal(ids.destination));
 
-  if (sourceId) {
+  if (refreshDestination && sourceId) {
     refreshDestinationOptions(sourceId, ids.destination);
   }
 
@@ -298,9 +298,8 @@ function computeSourceEquivalentUI(destinationAmount, sourceCurrency, destinatio
 /* ── Build payment confirmation message ── */
 function buildPaymentConfirmMsg(destinationAmount, sourceCurrency, destinationCurrency, label) {
   const isCross = sourceCurrency !== destinationCurrency;
-  const involvesUsd = [sourceCurrency, destinationCurrency].includes("USD");
   const sourceEquivalent = computeSourceEquivalentUI(destinationAmount, sourceCurrency, destinationCurrency);
-  const fee = involvesUsd ? Number((sourceEquivalent * FOREX_FEE_RATE).toFixed(2)) : 0;
+  const fee = isCross ? Number((sourceEquivalent * FOREX_FEE_RATE).toFixed(2)) : 0;
   const finalCharge = Number((sourceEquivalent + fee).toFixed(2));
   const sourceToDestinationRate = sourceCurrency === destinationCurrency
     ? 1
@@ -312,11 +311,11 @@ function buildPaymentConfirmMsg(destinationAmount, sourceCurrency, destinationCu
   if (isCross) {
     msg += `Exchange rate:         ${sourceCurrency}->${destinationCurrency} = ${sourceToDestinationRate.toFixed(6)}\n`;
   }
-  if (involvesUsd) {
+  if (isCross) {
     msg += `Forex fee (1.8%):      ${fmtAmt(fee)} ${sourceCurrency}\n`;
   }
   msg += `Final amount deducted: ${fmtAmt(finalCharge)} ${sourceCurrency}`;
-  return { msg, fee, finalCharge, sourceEquivalent, isCross, involvesUsd };
+  return { msg, fee, finalCharge, sourceEquivalent, isCross };
 }
 
 async function handleCreateCampaign() {
@@ -476,7 +475,7 @@ async function handleCreatePayment(formKey = "modal") {
     return;
   }
 
-  const { isCross, involvesUsd } =
+  const { isCross } =
     buildPaymentConfirmMsg(amount, currencyCode, destinationCurrencyCode, "Payment");
 
   state.pendingPayment = {
@@ -490,7 +489,7 @@ async function handleCreatePayment(formKey = "modal") {
       currencyCode,
       destinationCurrencyCode,
       paymentType: "NORMAL_PAYMENT",
-      forexConfirmed: involvesUsd
+      forexConfirmed: isCross
     },
     summary: {
       sourceLabel: `${source.accountHolderName} (#${source.id})`,
@@ -725,7 +724,7 @@ async function handleDonate(campaignId) {
     return;
   }
 
-  const { msg, isCross, involvesUsd } =
+  const { msg, isCross } =
     buildPaymentConfirmMsg(amount, sourceCurrency, destinationCurrency, `Donation to "${campaign.campaignName}"`);
   if (!window.confirm(msg)) return;
 
@@ -739,7 +738,7 @@ async function handleDonate(campaignId) {
         amount,
         currencyCode: sourceCurrency,
         idempotencyKey: `${campaignId}-${sourceAccountId}-${amount}-${Date.now()}`,
-        forexConfirmed: involvesUsd
+        forexConfirmed: isCross
       })
     });
     await loadAllData();
@@ -1125,7 +1124,7 @@ async function viewPaymentHistory(paymentId) {
   bsHistoryModal.show();
 
   try {
-    const history = await fetchJson(`/api/payments/${paymentId}/history`);
+    const history = await fetchJson(`/api/payments/${paymentId}/history?userId=${encodeURIComponent(state.userId)}`);
     if (!Array.isArray(history) || !history.length) {
       document.getElementById("paymentHistoryArea").innerHTML = '<p class="text-muted small text-center py-2">No history found.</p>';
       return;
