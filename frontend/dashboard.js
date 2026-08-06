@@ -5,372 +5,339 @@
 const API_BASE = (window.PAYMENT_API_BASE ||
                   localStorage.getItem("PAYMENT_API_BASE") ||
                   "http://localhost:8080").replace(/\/$/, "");
-const THEME_KEY   = "PPS_THEME";
+const THEME_KEY = "PPS_THEME";
 const ACCOUNT_KEY = "PPS_SELECTED_ACCOUNT";
+const SUPPORTED_UI_CURRENCIES = ["INR", "USD"];
+const FOREX_FEE_RATE = 0.018;
+const EXCHANGE_RATE_INR_PER_USD = 93; // 1 USD = 93 INR
+const PAYMENT_FORM_IDS = {
+  modal: {
+    source: "sourceAccountId",
+    destination: "destinationAccountId",
+    amount: "paymentAmount",
+    currency: "currencyCode",
+    destinationCurrency: "destinationCurrencyCode",
+    submit: "submitPaymentBtn",
+    alertArea: "paymentAlertArea"
+  },
+  inline: {
+    source: "inlineSourceAccountId",
+    destination: "inlineDestinationAccountId",
+    amount: "inlinePaymentAmount",
+    currency: "inlineCurrencyCode",
+    destinationCurrency: "inlineDestinationCurrencyCode",
+    submit: "inlineSubmitPaymentBtn",
+    alertArea: "inlinePaymentAlertArea"
+  }
+};
 
-/* ====== App state ====== */
-let selectedAccount  = null;
-let allAccounts      = [];
-let allPayments      = [];
-let allCampaigns     = [];
-let selectedCampaign = null;
-let crowdfundingMode = "donate";
+const state = {
+  selectedAccount: null,
+  userId: null,
+  user: null,
+  accounts: [],
+  allAccounts: [],
+  payments: [],
+  filteredPayments: [],
+  tickets: [],
+  campaigns: [],
+  dashboard: null,
+  currentTicketPaymentId: null
+};
 
-/* ====== Bootstrap modal instances ====== */
-let bsPaymentModal, bsCrowdfundingModal, bsCampaignDetailModal, bsHistoryModal, bsToast;
+let bsPaymentModal;
+let bsTicketModal;
+let bsHistoryModal;
+let bsCampaignModal;
+let bsDisputeModal;
+let bsToast;
 
-/* ============================================================
-   INIT
-   ============================================================ */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   requestAnimationFrame(() => document.body.classList.add("is-loaded"));
   applySavedTheme();
-
-  /* Require a selected account */
-  try {
-    const raw = localStorage.getItem(ACCOUNT_KEY);
-    if (!raw) throw new Error("no account");
-    selectedAccount = JSON.parse(raw);
-  } catch {
+  if (!loadSelectedAccount()) {
     window.location.href = "index.html";
     return;
   }
 
-  /* Bootstrap modals */
-  bsPaymentModal       = new bootstrap.Modal(document.getElementById("paymentModal"));
-  bsCrowdfundingModal  = new bootstrap.Modal(document.getElementById("crowdfundingModal"));
-  bsCampaignDetailModal= new bootstrap.Modal(document.getElementById("campaignDetailModal"));
-  bsHistoryModal       = new bootstrap.Modal(document.getElementById("paymentHistoryModal"));
-  bsToast              = new bootstrap.Toast(document.getElementById("pfToast"), { delay: 4500 });
+  bsPaymentModal  = new bootstrap.Modal(document.getElementById("paymentModal"));
+  bsTicketModal   = new bootstrap.Modal(document.getElementById("ticketModal"));
+  bsHistoryModal  = new bootstrap.Modal(document.getElementById("paymentHistoryModal"));
+  bsCampaignModal = new bootstrap.Modal(document.getElementById("createCampaignModal"));
+  bsDisputeModal  = new bootstrap.Modal(document.getElementById("disputeModal"));
+  bsToast = new bootstrap.Toast(document.getElementById("pfToast"), { delay: 4200 });
 
-  /* Populate navbar immediately from cached account */
-  updateNavProfile();
-
-  /* Wire up events */
-  initThemeToggle();
-  initButtons();
-  initPaymentForm();
-  initCrowdfundingModal();
-  initContribution();
-
-  /* Load data */
-  loadAllData();
+  bindUi();
+  await loadAllData();
 });
 
-/* ============================================================
-   DATA LOADING
-   ============================================================ */
-async function loadAllData() {
-  const [accRes, payRes, campRes] = await Promise.allSettled([
-    fetchJson("/api/accounts"),
-    fetchJson("/api/payments"),
-    fetchJson("/api/campaigns"),
-  ]);
+function bindUi() {
+  document.getElementById("themeToggle")?.addEventListener("click", toggleTheme);
+  document.getElementById("refreshBtn")?.addEventListener("click", loadAllData);
+  document.getElementById(PAYMENT_FORM_IDS.modal.submit)?.addEventListener("click", () => handleCreatePayment("modal"));
+  document.getElementById(PAYMENT_FORM_IDS.inline.submit)?.addEventListener("click", () => handleCreatePayment("inline"));
+  document.getElementById("submitTicketBtn")?.addEventListener("click", handleCreateTicket);
+  document.getElementById("saveProfileBtn")?.addEventListener("click", handleProfileUpdate);
+  document.getElementById("exportCsvBtn")?.addEventListener("click", exportCsv);
+  document.getElementById("exportPdfBtn")?.addEventListener("click", exportPdf);
+  document.getElementById("createCampaignBtn")?.addEventListener("click", () => {
+    const select = document.getElementById("campaignBucketAccountId");
+    if (select) {
+      select.innerHTML = "";
+      state.accounts.filter((a) => String(a.accountStatus || "").toUpperCase() === "ACTIVE").forEach((a) => {
+        select.insertAdjacentHTML("beforeend", `<option value="${a.id}">${a.id} - ${esc(a.accountHolderName)} (${a.currencyCode})</option>`);
+      });
+    }
+    bsCampaignModal.show();
+  });
+  document.getElementById("submitCampaignBtn")?.addEventListener("click", handleCreateCampaign);
+  document.getElementById("submitDisputeBtn")?.addEventListener("click", handleCreateDispute);
 
-  allAccounts  = accRes.status  === "fulfilled" && Array.isArray(accRes.value)  ? accRes.value  : [];
-  allPayments  = payRes.status  === "fulfilled" && Array.isArray(payRes.value)  ? payRes.value  : [];
-  allCampaigns = campRes.status === "fulfilled" && Array.isArray(campRes.value) ? campRes.value : [];
-
-  /* Refresh selected account from live data */
-  const fresh = allAccounts.find(a => a.id === selectedAccount.id);
-  if (fresh) {
-    selectedAccount = fresh;
-    localStorage.setItem(ACCOUNT_KEY, JSON.stringify(fresh));
-  }
-
-  if (accRes.status === "rejected" && payRes.status === "rejected") {
-    showGlobalAlert("Cannot connect to the backend. Make sure Spring Boot is running.", "danger");
-  }
-
-  updateNavProfile();
-  populatePaymentDropdowns();
-  renderStats();
-  renderPaymentsTable();
-}
-
-/* ============================================================
-   PROFILE / NAV
-   ============================================================ */
-function updateNavProfile() {
-  setText("navAvatar",          initials(selectedAccount.accountHolderName));
-  setText("navAccountName",     selectedAccount.accountHolderName);
-  setText("dropdownAvatar",     initials(selectedAccount.accountHolderName));
-  setText("dropdownAccountName",selectedAccount.accountHolderName);
-  setText("dropdownAccountId",  `Account #${selectedAccount.id} · ${selectedAccount.currencyCode}`);
-  setText("statAccountName",    `Account #${selectedAccount.id}`);
-}
-
-/* ============================================================
-   STATS
-   ============================================================ */
-function renderStats() {
-  const mine = allPayments.filter(p =>
-    p.sourceAccountId === selectedAccount.id ||
-    p.destinationAccountId === selectedAccount.id
-  );
-
-  setText("statBalance",   `${selectedAccount.currencyCode} ${fmtAmt(selectedAccount.balance)}`);
-  setText("statTotal",     mine.length);
-  setText("statCompleted", mine.filter(p => p.status === "COMPLETED" || p.status === "SUCCESS").length);
-  setText("statFailed",    mine.filter(p => p.status === "FAILED").length);
-}
-
-/* ============================================================
-   PAYMENTS TABLE
-   ============================================================ */
-function renderPaymentsTable() {
-  const tbody = document.getElementById("paymentsTableBody");
-
-  const mine = allPayments
-    .filter(p => p.sourceAccountId === selectedAccount.id || p.destinationAccountId === selectedAccount.id)
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-    .slice(0, 25);
-
-  if (mine.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" class="text-center py-5 text-muted">
-          <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-          No transactions yet. Create your first payment!
-        </td>
-      </tr>`;
-    return;
-  }
-
-  tbody.innerHTML = mine.map(p => `
-    <tr onclick="viewPaymentHistory(${p.id})" title="Click to view status history">
-      <td><span class="fw-semibold small">${esc(p.paymentReference || `#${p.id}`)}</span></td>
-      <td>
-        <small class="text-muted">
-          ${p.sourceAccountId}
-          <i class="bi bi-arrow-right mx-1"></i>
-          ${p.destinationAccountId}
-        </small>
-      </td>
-      <td><strong>${esc(p.currencyCode)} ${fmtAmt(p.amount)}</strong></td>
-      <td><small class="text-muted">${esc(p.paymentType || "NORMAL_PAYMENT")}</small></td>
-      <td><span class="badge ${badgeClass(p.status)}">${esc(p.status)}</span></td>
-      <td><small class="text-muted">${fmtDate(p.createdAt)}</small></td>
-    </tr>
-  `).join("");
-}
-
-/* ============================================================
-   PAYMENT FORM
-   ============================================================ */
-function populatePaymentDropdowns() {
-  const src  = document.getElementById("sourceAccountId");
-  const dest = document.getElementById("destinationAccountId");
-
-  src.innerHTML  = "";
-  dest.innerHTML = '<option value="">Select destination account</option>';
-
-  const sourceAccount = allAccounts.find(a => a.id === selectedAccount.id) || selectedAccount;
-  const sourceLabel = `${sourceAccount.id} – ${esc(sourceAccount.accountHolderName)} (${sourceAccount.currencyCode})`;
-  src.insertAdjacentHTML("beforeend", `<option value="${sourceAccount.id}">${sourceLabel}</option>`);
-  src.value = String(sourceAccount.id);
-  src.disabled = true;
-
-  const validDestinations = allAccounts.filter(account =>
-    account.id !== sourceAccount.id
-      && String(account.accountStatus || "").toUpperCase() === "ACTIVE"
-      && String(account.currencyCode || "").toUpperCase() === String(sourceAccount.currencyCode || "").toUpperCase()
-  );
-
-  validDestinations.forEach(a => {
-    const label = `${a.id} – ${esc(a.accountHolderName)} (${a.currencyCode})`;
-    dest.insertAdjacentHTML("beforeend", `<option value="${a.id}">${label}</option>`);
+  [
+    "referenceFilter", "senderFilter", "receiverFilter", "statusFilter", "paymentTypeFilter", "currencyFilter",
+    "fromDateFilter", "toDateFilter", "dateFilter", "minAmountFilter", "maxAmountFilter", "timeWindowFilter"
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", loadPaymentsByFilter);
+    document.getElementById(id)?.addEventListener("change", loadPaymentsByFilter);
   });
 
-  if (validDestinations.length > 0) {
-    dest.value = String(validDestinations[0].id);
-    document.getElementById("destinationCurrencyCode").value = validDestinations[0].currencyCode;
-  }
-
-  document.getElementById("currencyCode").value = sourceAccount.currencyCode;
+  ["modal", "inline"].forEach((key) => {
+    const ids = PAYMENT_FORM_IDS[key];
+    document.getElementById(ids.source)?.addEventListener("change", () => syncPaymentCurrencies(key));
+    document.getElementById(ids.destination)?.addEventListener("change", () => syncPaymentCurrencies(key));
+  });
 }
 
-function initPaymentForm() {
-  /* Auto-fill source currency when source account changes */
-  document.getElementById("sourceAccountId")?.addEventListener("change", e => {
-    const acc = allAccounts.find(a => a.id === Number(e.target.value));
-    if (acc) document.getElementById("currencyCode").value = acc.currencyCode;
-  });
-
-  /* Auto-fill destination currency */
-  document.getElementById("destinationAccountId")?.addEventListener("change", e => {
-    const acc = allAccounts.find(a => a.id === Number(e.target.value));
-    if (acc) document.getElementById("destinationCurrencyCode").value = acc.currencyCode;
-  });
-
-  /* Submit */
-  document.getElementById("submitPaymentBtn")?.addEventListener("click", handlePaymentSubmit);
-}
-
-async function handlePaymentSubmit() {
-  clearAlert("paymentAlertArea");
-
-  const srcId  = Number(selectedAccount.id);
-  const dstId  = Number(document.getElementById("destinationAccountId").value);
-  const amount = Number(document.getElementById("paymentAmount").value);
-  const curr   = document.getElementById("currencyCode").value;
-  const dstCur = document.getElementById("destinationCurrencyCode").value;
-  const userId = resolveCurrentUserId();
-
-  if (!srcId)                       return setAlert("paymentAlertArea", "Source account not available.", "warning");
-  if (!dstId)                       return setAlert("paymentAlertArea", "Please select a destination account.", "warning");
-  if (srcId === dstId)              return setAlert("paymentAlertArea", "Source and destination must be different.", "warning");
-  if (!amount || amount <= 0)       return setAlert("paymentAlertArea", "Enter a valid amount greater than zero.", "warning");
-  if (!userId)                      return setAlert("paymentAlertArea", "Current user id is missing. Please reselect your account from landing page.", "warning");
-
-  const sourceAcc = allAccounts.find(a => a.id === srcId);
-  const destinationAcc = allAccounts.find(a => a.id === dstId);
-  if (!sourceAcc || !destinationAcc) {
-    return setAlert("paymentAlertArea", "Invalid source or destination account.", "warning");
-  }
-  if (String(sourceAcc.accountStatus || "").toUpperCase() !== "ACTIVE") {
-    return setAlert("paymentAlertArea", "Source account is not active.", "warning");
-  }
-  if (String(destinationAcc.accountStatus || "").toUpperCase() !== "ACTIVE") {
-    return setAlert("paymentAlertArea", "Destination account is not active.", "warning");
-  }
-  if (String(sourceAcc.currencyCode || "").toUpperCase() !== String(destinationAcc.currencyCode || "").toUpperCase()) {
-    return setAlert("paymentAlertArea", "Destination currency must match source currency.", "warning");
-  }
-  if (Number(sourceAcc.balance || 0) < amount) {
-    return setAlert("paymentAlertArea", "Insufficient source account balance.", "warning");
-  }
-
-  const btn = document.getElementById("submitPaymentBtn");
-  setLoading(btn, true, "Processing…");
-
+function loadSelectedAccount() {
   try {
-    const created = await fetchJson("/api/payments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        sourceAccountId: srcId,
-        destinationAccountId: dstId,
-        amount,
-        currencyCode: curr,
-        destinationCurrencyCode: dstCur,
-        paymentType: "NORMAL_PAYMENT",
-      }),
-    });
-
-    bsPaymentModal.hide();
-    showToast("Payment Created", `${created.paymentReference} — Status: ${created.status}`, "success");
-    document.getElementById("paymentForm").reset();
-    await loadAllData();
-
-  } catch (err) {
-    setAlert("paymentAlertArea", err.message || "Payment failed. Please try again.", "danger");
-  } finally {
-    setLoading(btn, false, '<i class="bi bi-send me-1"></i>Send Payment');
+    const raw = localStorage.getItem(ACCOUNT_KEY);
+    if (!raw) return false;
+    state.selectedAccount = JSON.parse(raw);
+    return !!state.selectedAccount?.id;
+  } catch {
+    return false;
   }
 }
 
-/* ============================================================
-   CROWDFUNDING
-   ============================================================ */
-function initCrowdfundingModal() {
-  const donateModeBtn = document.getElementById("crowdfundingDonateModeBtn");
-  const createModeBtn = document.getElementById("crowdfundingCreateModeBtn");
-  const createBtn = document.getElementById("createCampaignBtn");
-  const emptyCreateBtn = document.getElementById("emptyStateCreateCampaignBtn");
+async function loadAllData() {
+  clearGlobalAlert();
+  try {
+    const accountDetails = await fetchJson(`/api/accounts/${state.selectedAccount.id}`);
+    state.selectedAccount = accountDetails;
+    localStorage.setItem(ACCOUNT_KEY, JSON.stringify(accountDetails));
+    state.userId = accountDetails?.user?.id ? Number(accountDetails.user.id) : null;
+    if (!state.userId) {
+      throw new Error("Could not identify the selected user. Please switch account and try again.");
+    }
 
-  donateModeBtn?.addEventListener("click", () => setCrowdfundingMode("donate"));
-  createModeBtn?.addEventListener("click", () => setCrowdfundingMode("create"));
-  createBtn?.addEventListener("click", handleCreateCampaign);
-  emptyCreateBtn?.addEventListener("click", () => setCrowdfundingMode("create"));
+    const [workspace, allAccounts, campaigns] = await Promise.all([
+      fetchJson(`/api/users/${state.userId}/workspace`),
+      fetchJson("/api/accounts"),
+      fetchJson("/api/campaigns")
+    ]);
 
-  document.getElementById("crowdfundingModal")
-    .addEventListener("show.bs.modal", async () => {
-      syncCampaignFormDefaults();
-      setCrowdfundingMode("donate");
-      await loadCampaigns();
+    state.user = workspace.user || null;
+    state.accounts = Array.isArray(workspace.accounts) ? workspace.accounts : [];
+    state.tickets = Array.isArray(workspace.tickets) ? workspace.tickets : [];
+    state.dashboard = workspace.dashboard || null;
+    state.allAccounts = Array.isArray(allAccounts) ? allAccounts : [];
+    state.campaigns = Array.isArray(campaigns) ? campaigns : [];
+
+    populatePaymentDropdowns();
+    syncProfileSection();
+    renderStats();
+    renderDailyLimitPie();
+    renderTicketsTable();
+    renderCampaigns();
+    await loadPaymentsByFilter();
+  } catch (error) {
+    showGlobalAlert(error.message || "Unable to load dashboard data.", "danger");
+  }
+}
+
+async function loadPaymentsByFilter() {
+  if (!state.userId) return;
+  try {
+    const params = new URLSearchParams();
+    params.set("userId", String(state.userId));
+    params.set("sortBy", "date");
+    params.set("sortDir", "desc");
+
+    setIfValue(params, "reference", getVal("referenceFilter"));
+    setIfValue(params, "senderName", getVal("senderFilter"));
+    setIfValue(params, "receiverName", getVal("receiverFilter"));
+    setIfValue(params, "currency", getVal("currencyFilter"));
+    setIfValue(params, "paymentType", getVal("paymentTypeFilter"));
+    setIfValue(params, "timeWindow", getVal("timeWindowFilter"));
+    setIfValue(params, "fromDate", getVal("fromDateFilter"));
+    setIfValue(params, "toDate", getVal("toDateFilter"));
+    setIfValue(params, "date", getVal("dateFilter"));
+    setIfValue(params, "minAmount", getVal("minAmountFilter"));
+    setIfValue(params, "maxAmount", getVal("maxAmountFilter"));
+
+    const status = getVal("statusFilter");
+    if (status) params.append("status", status);
+
+    const response = await fetchJson(`/api/payments?${params.toString()}`);
+    state.payments = Array.isArray(response) ? response : [];
+    state.filteredPayments = state.payments;
+    renderPaymentsTable();
+    renderStats();
+  } catch (error) {
+    showGlobalAlert(error.message || "Unable to load payments.", "danger");
+  }
+}
+
+function renderStats() {
+  const mine = state.payments;
+  const completed = mine.filter((p) => p.status === "COMPLETED" || p.status === "SUCCESS").length;
+  const failed = mine.filter((p) => p.status === "FAILED").length;
+  setText("statBalance", `${state.selectedAccount.currencyCode} ${fmtAmt(state.selectedAccount.balance)}`);
+  setText("statAccountName", `Account #${state.selectedAccount.id}`);
+  setText("statTotal", String(mine.length));
+  setText("statCompleted", String(completed));
+  setText("statFailed", String(failed));
+}
+
+function renderDailyLimitPie() {
+  const dashboard = state.dashboard || {};
+  const limit = Number(dashboard.dailyTransactionLimit || 0);
+  const spent = Number(dashboard.spentToday || 0);
+  const remaining = Math.max(0, Number(dashboard.remainingDailyLimit || limit - spent));
+  const usedPercent = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+  const usedDeg = (usedPercent / 100) * 360;
+
+  setText("dailyLimitValue", fmtAmt(limit));
+  setText("dailySpentValue", fmtAmt(spent));
+  setText("dailyRemainingValue", fmtAmt(remaining));
+
+  const pie = document.getElementById("dailyLimitPie");
+  if (pie) {
+    pie.style.background = `conic-gradient(#4169e1 0deg, #4169e1 ${usedDeg}deg, #dbe6ff ${usedDeg}deg, #dbe6ff 360deg)`;
+  }
+}
+
+function populatePaymentDropdowns() {
+  const sourceOptions = state.accounts.filter((a) => String(a.accountStatus || "").toUpperCase() === "ACTIVE");
+  ["modal", "inline"].forEach((key) => {
+    const ids = PAYMENT_FORM_IDS[key];
+    const sourceSelect = document.getElementById(ids.source);
+    const destSelect = document.getElementById(ids.destination);
+    if (!sourceSelect || !destSelect) return;
+
+    sourceSelect.innerHTML = "";
+    destSelect.innerHTML = "";
+
+    sourceOptions.forEach((account) => {
+      sourceSelect.insertAdjacentHTML("beforeend", `<option value="${account.id}">${account.id} - ${esc(account.accountHolderName)} (${account.currencyCode})</option>`);
+    });
+
+    const defaultSource = state.selectedAccount.id;
+    sourceSelect.value = String(defaultSource);
+    refreshDestinationOptions(defaultSource, ids.destination);
+    syncPaymentCurrencies(key);
+  });
+}
+
+function refreshDestinationOptions(sourceId, destinationSelectId) {
+  const destSelect = document.getElementById(destinationSelectId);
+  if (!destSelect) return;
+  destSelect.innerHTML = "";
+  state.allAccounts
+    .filter((account) => Number(account.id) !== Number(sourceId) && String(account.accountStatus || "").toUpperCase() === "ACTIVE")
+    .forEach((account) => {
+      destSelect.insertAdjacentHTML("beforeend", `<option value="${account.id}">${account.id} - ${esc(account.accountHolderName)} (${account.currencyCode})</option>`);
     });
 }
 
-function setCrowdfundingMode(mode) {
-  crowdfundingMode = mode === "create" ? "create" : "donate";
-  const donateModeBtn = document.getElementById("crowdfundingDonateModeBtn");
-  const createModeBtn = document.getElementById("crowdfundingCreateModeBtn");
-  const createSection = document.getElementById("createCampaignSection");
-  const loadingState = document.getElementById("campaignsLoadingState");
-  const grid = document.getElementById("campaignsGrid");
-  const emptyState = document.getElementById("campaignsEmptyState");
-
-  donateModeBtn?.classList.toggle("btn-success", crowdfundingMode === "donate");
-  donateModeBtn?.classList.toggle("btn-outline-success", crowdfundingMode !== "donate");
-  createModeBtn?.classList.toggle("btn-success", crowdfundingMode === "create");
-  createModeBtn?.classList.toggle("btn-outline-success", crowdfundingMode !== "create");
-
-  if (createSection) {
-    createSection.classList.toggle("d-none", crowdfundingMode !== "create");
-  }
-
-  if (crowdfundingMode === "create") {
-    hide("campaignsLoadingState");
-    hide("campaignsGrid");
-    hide("campaignsEmptyState");
+function syncPaymentCurrencies(formKey) {
+  if (formKey) {
+    syncPaymentCurrenciesFor(formKey);
     return;
   }
-
-  if (grid && grid.innerHTML.trim()) {
-    hide("campaignsLoadingState");
-    show("campaignsGrid");
-    hide("campaignsEmptyState");
-  } else if (loadingState && !loadingState.classList.contains("d-none")) {
-    show("campaignsLoadingState");
-    hide("campaignsGrid");
-    hide("campaignsEmptyState");
-  } else {
-    hide("campaignsLoadingState");
-    hide("campaignsGrid");
-    show("campaignsEmptyState");
-  }
+  syncPaymentCurrenciesFor("modal");
+  syncPaymentCurrenciesFor("inline");
 }
 
-function syncCampaignFormDefaults() {
-  const dateInput = document.getElementById("campaignEndDateInput");
-  const currencyInput = document.getElementById("campaignTargetCurrencyInput");
-  if (currencyInput && selectedAccount?.currencyCode) {
-    currencyInput.value = selectedAccount.currencyCode;
+function syncPaymentCurrenciesFor(formKey) {
+  const ids = PAYMENT_FORM_IDS[formKey] || PAYMENT_FORM_IDS.modal;
+  const sourceId = Number(getVal(ids.source));
+  const destinationId = Number(getVal(ids.destination));
+
+  if (sourceId) {
+    refreshDestinationOptions(sourceId, ids.destination);
   }
-  if (dateInput && !dateInput.value) {
-    const nextMonth = new Date();
-    nextMonth.setDate(nextMonth.getDate() + 30);
-    dateInput.value = nextMonth.toISOString().slice(0, 10);
+
+  const source = state.allAccounts.find((a) => Number(a.id) === sourceId);
+  const destination = state.allAccounts.find((a) => Number(a.id) === Number(getVal(ids.destination) || destinationId));
+
+  if (source?.currencyCode) setVal(ids.currency, source.currencyCode);
+  if (destination?.currencyCode) setVal(ids.destinationCurrency, destination.currencyCode);
+}
+
+/* ── Currency conversion helper (mirrors backend rate 1 USD = 93 INR) ── */
+function computeSourceEquivalentUI(destinationAmount, sourceCurrency, destinationCurrency) {
+  if (sourceCurrency === destinationCurrency) return Number(Number(destinationAmount).toFixed(2));
+  if (sourceCurrency === "INR" && destinationCurrency === "USD") {
+    return Number((destinationAmount * EXCHANGE_RATE_INR_PER_USD).toFixed(2));
   }
+  if (sourceCurrency === "USD" && destinationCurrency === "INR") {
+    return Number((destinationAmount / EXCHANGE_RATE_INR_PER_USD).toFixed(2));
+  }
+  return Number(Number(destinationAmount).toFixed(2));
+}
+
+/* ── Build payment confirmation message ── */
+function buildPaymentConfirmMsg(destinationAmount, sourceCurrency, destinationCurrency, label) {
+  const isCross = sourceCurrency !== destinationCurrency;
+  const involvesUsd = [sourceCurrency, destinationCurrency].includes("USD");
+  const sourceEquivalent = computeSourceEquivalentUI(destinationAmount, sourceCurrency, destinationCurrency);
+  const fee = involvesUsd ? Number((sourceEquivalent * FOREX_FEE_RATE).toFixed(2)) : 0;
+  const finalCharge = Number((sourceEquivalent + fee).toFixed(2));
+  const sourceToDestinationRate = sourceCurrency === destinationCurrency
+    ? 1
+    : (sourceCurrency === "USD" ? EXCHANGE_RATE_INR_PER_USD : 1 / EXCHANGE_RATE_INR_PER_USD);
+
+  let msg = `Confirm ${label || "Payment"}?\n\n`;
+  msg += `Destination amount:    ${fmtAmt(destinationAmount)} ${destinationCurrency}\n`;
+  msg += `Source equivalent:     ${fmtAmt(sourceEquivalent)} ${sourceCurrency}\n`;
+  if (isCross) {
+    msg += `Exchange rate:         ${sourceCurrency}->${destinationCurrency} = ${sourceToDestinationRate.toFixed(6)}\n`;
+  }
+  if (involvesUsd) {
+    msg += `Forex fee (1.8%):      ${fmtAmt(fee)} ${sourceCurrency}\n`;
+  }
+  msg += `Final amount deducted: ${fmtAmt(finalCharge)} ${sourceCurrency}`;
+  return { msg, fee, finalCharge, sourceEquivalent, isCross, involvesUsd };
 }
 
 async function handleCreateCampaign() {
-  clearAlert("campaignsAlertArea");
-
-  if (!selectedAccount?.id) {
-    return setAlert("campaignsAlertArea", "Please select an account before creating a campaign.", "warning");
-  }
-
-  const name = document.getElementById("campaignNameInput")?.value.trim();
-  const description = document.getElementById("campaignDescriptionInput")?.value.trim();
-  const targetAmount = Number(document.getElementById("campaignTargetAmountInput")?.value);
-  const targetCurrency = document.getElementById("campaignTargetCurrencyInput")?.value;
-  const campaignEndDate = document.getElementById("campaignEndDateInput")?.value;
+  clearAlert("createCampaignAlertArea");
+  const name = getVal("campaignName").trim();
+  const description = getVal("campaignDescription").trim();
+  const category = getVal("campaignCategory");
+  const currency = getVal("campaignCurrency");
+  const targetAmount = Number(getVal("campaignTargetAmount"));
+  const deadline = getVal("campaignDeadline");
+  const payoutAccountId = Number(getVal("campaignBucketAccountId"));
 
   if (!name) {
-    return setAlert("campaignsAlertArea", "Campaign name is required.", "warning");
+    setAlert("createCampaignAlertArea", "Campaign name is required.", "warning");
+    return;
   }
   if (!targetAmount || targetAmount <= 0) {
-    return setAlert("campaignsAlertArea", "Target amount must be greater than zero.", "warning");
+    setAlert("createCampaignAlertArea", "Target amount must be greater than zero.", "warning");
+    return;
   }
-  if (!campaignEndDate) {
-    return setAlert("campaignsAlertArea", "Campaign end date is required.", "warning");
+  if (!deadline) {
+    setAlert("createCampaignAlertArea", "Deadline is required.", "warning");
+    return;
+  }
+  if (!payoutAccountId) {
+    setAlert("createCampaignAlertArea", "Please select a creator payout account.", "warning");
+    return;
   }
 
-  const btn = document.getElementById("createCampaignBtn");
-  setLoading(btn, true, "Creating...");
   try {
     const created = await fetchJson("/api/campaigns", {
       method: "POST",
@@ -378,279 +345,655 @@ async function handleCreateCampaign() {
       body: JSON.stringify({
         campaignName: name,
         description,
-        bucketAccountId: Number(selectedAccount.id),
+        donationCategory: category,
         targetAmount,
-        targetCurrency,
-        campaignEndDate,
-        donationCategory: "General",
-        donationOptions: "ANY",
-        thresholdPercentage: 100
+        targetCurrency: currency,
+        campaignEndDate: deadline,
+        creatorPayoutAccountId: payoutAccountId,
+        // Backward compatibility field; backend now creates dedicated bucket per campaign.
+        bucketAccountId: payoutAccountId,
+        status: "ACTIVE"
       })
     });
-
-    document.getElementById("createCampaignForm")?.reset();
-    syncCampaignFormDefaults();
-    showToast("Campaign created", `${created.campaignName || "Campaign"} is now active.`, "success");
-    await loadCampaigns();
-    setCrowdfundingMode("donate");
-  } catch (err) {
-    setAlert("campaignsAlertArea", err.message || "Failed to create campaign.", "danger");
-  } finally {
-    setLoading(btn, false, '<i class="bi bi-plus-circle me-1"></i>Create Campaign');
+    bsCampaignModal.hide();
+    document.getElementById("campaignName").value = "";
+    document.getElementById("campaignDescription").value = "";
+    document.getElementById("campaignTargetAmount").value = "";
+    document.getElementById("campaignDeadline").value = "";
+    await loadAllData();
+    showToast("Campaign created!", `"${esc(created.campaignName)}" is now live.`, "success");
+    document.getElementById("crowdfundingSection")?.scrollIntoView({ behavior: "smooth" });
+  } catch (error) {
+    setAlert("createCampaignAlertArea", error.message || "Unable to create campaign.", "danger");
   }
 }
 
-async function loadCampaigns() {
-  if (crowdfundingMode !== "donate") {
+function renderPaymentsTable() {
+  const tbody = document.getElementById("paymentsTableBody");
+  if (!tbody) return;
+
+  if (!state.filteredPayments.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No transactions found.</td></tr>';
     return;
   }
-  clearAlert("campaignsAlertArea");
-  show("campaignsLoadingState");
-  hide("campaignsGrid");
-  hide("campaignsEmptyState");
 
-  try {
-    allCampaigns = await fetchJson("/api/campaigns");
-    const active = allCampaigns.filter(c => c.status === "ACTIVE");
+  // Collect all account IDs that belong to this user for role detection
+  const myAccountIds = new Set(state.accounts.map(a => Number(a.id)));
 
-    hide("campaignsLoadingState");
+  tbody.innerHTML = state.filteredPayments.map((payment) => {
+    const sender   = accountName(payment.sourceAccountId);
+    const receiver = accountName(payment.destinationAccountId);
+    const isSender   = myAccountIds.has(Number(payment.sourceAccountId));
+    const isReceiver = myAccountIds.has(Number(payment.destinationAccountId));
 
-    if (active.length === 0) { show("campaignsEmptyState"); return; }
+    const disputeSenderBtn = isSender
+      ? `<button class="btn btn-xs btn-outline-warning py-0 px-1 ms-1" style="font-size:.72rem" data-dispute-sender="${payment.id}" title="Wrong Recipient Dispute"><i class="bi bi-flag-fill"></i> Wrong Recipient</button>`
+      : "";
+    const disputeReceiverBtn = isReceiver
+      ? `<button class="btn btn-xs btn-outline-info py-0 px-1 ms-1" style="font-size:.72rem" data-dispute-receiver="${payment.id}" title="Report Unexpected Payment"><i class="bi bi-exclamation-circle"></i> Unexpected</button>`
+      : "";
 
-    const grid = document.getElementById("campaignsGrid");
-    grid.innerHTML = active.map((c, i) => {
-      const raised  = Number(c.currentAmount || 0);
-      const target  = Number(c.targetAmount  || 1);
-      const pct     = Math.min(100, Math.round((raised / target) * 100));
-      return `
-        <div class="col-12 col-md-6 pf-in" style="animation-delay:${i * 0.07}s">
-          <div class="pf-card campaign-card p-3 h-100" onclick="showCampaignDetail(${c.id})">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <div class="pf-avatar-sm" style="background:var(--pf-green-grad)">
-                <i class="bi bi-heart-fill" style="font-size:.72rem"></i>
-              </div>
-              <div class="flex-grow-1 overflow-hidden">
-                <h6 class="fw-bold mb-0 text-truncate small">${esc(c.campaignName || `Campaign #${c.id}`)}</h6>
-                <span class="badge bg-success small">ACTIVE</span>
-              </div>
-              <span class="fw-semibold small text-success">${pct}%</span>
-            </div>
-            <div class="progress pf-progress mb-2">
-              <div class="progress-bar bg-success" style="width:${pct}%"></div>
-            </div>
-            <div class="d-flex justify-content-between small text-muted">
-              <span>Raised: <strong>${esc(c.targetCurrency || "")} ${fmtAmt(raised)}</strong></span>
-              <span>Goal: <strong>${esc(c.targetCurrency || "")} ${fmtAmt(target)}</strong></span>
-            </div>
-          </div>
-        </div>`;
-    }).join("");
+    return `
+      <tr>
+        <td><button class="btn btn-link p-0 text-decoration-none" data-history-id="${payment.id}">${esc(payment.paymentReference || `#${payment.id}`)}</button></td>
+        <td>${fmtDate(payment.createdAt)}</td>
+        <td>${esc(sender)}</td>
+        <td>${esc(receiver)}</td>
+        <td>${esc(payment.destinationCurrencyCode || payment.currencyCode)} ${fmtAmt(payment.amount)}</td>
+        <td>${esc(payment.paymentType || "NORMAL_PAYMENT")}</td>
+        <td><span class="badge ${badgeClass(payment.status)}">${esc(payment.status || "-")}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary" data-ticket-payment-id="${payment.id}">Raise Ticket</button>
+          ${disputeSenderBtn}${disputeReceiverBtn}
+        </td>
+      </tr>
+    `;
+  }).join("");
 
-    show("campaignsGrid");
-
-  } catch (err) {
-    hide("campaignsLoadingState");
-    setAlert("campaignsAlertArea", "Failed to load campaigns.", "danger");
-  }
-}
-
-function showCampaignDetail(campaignId) {
-  selectedCampaign = allCampaigns.find(c => c.id === campaignId);
-  if (!selectedCampaign) return;
-
-  const raised     = Number(selectedCampaign.currentAmount || 0);
-  const target     = Number(selectedCampaign.targetAmount  || 1);
-  const remaining  = Math.max(0, target - raised);
-  const pct        = Math.min(100, Math.round((raised / target) * 100));
-  const cur        = esc(selectedCampaign.targetCurrency || selectedAccount.currencyCode);
-
-  setText("campaignDetailTitle", selectedCampaign.campaignName || `Campaign #${selectedCampaign.id}`);
-
-  document.getElementById("campaignDetailArea").innerHTML = `
-    <div class="pf-surface-2 p-3 mb-3">
-      <div class="row g-3 text-center">
-        <div class="col-4">
-          <div class="fw-bold text-success">${cur} ${fmtAmt(raised)}</div>
-          <small class="text-muted">Raised</small>
-        </div>
-        <div class="col-4">
-          <div class="fw-bold">${cur} ${fmtAmt(target)}</div>
-          <small class="text-muted">Goal</small>
-        </div>
-        <div class="col-4">
-          <div class="fw-bold text-primary">${cur} ${fmtAmt(remaining)}</div>
-          <small class="text-muted">Remaining</small>
-        </div>
-      </div>
-    </div>
-    <div class="progress pf-progress mb-1">
-      <div class="progress-bar bg-success" style="width:${pct}%"></div>
-    </div>
-    <small class="text-muted d-block text-end">${pct}% funded</small>`;
-
-  setText("contributionCurrency", cur);
-  setEl("contributionAmount", el => { el.value = ""; });
-  setText("contributionSource", `${selectedAccount.accountHolderName} (#${selectedAccount.id})`);
-  clearAlert("contributionAlertArea");
-
-  /* Hide crowdfunding modal, then show detail after transition */
-  bsCrowdfundingModal.hide();
-  document.getElementById("crowdfundingModal").addEventListener("hidden.bs.modal", () => {
-    bsCampaignDetailModal.show();
-  }, { once: true });
-}
-
-function initContribution() {
-  document.getElementById("contributeBtn")?.addEventListener("click", handleContribution);
-
-  document.getElementById("backToCampaigns")?.addEventListener("click", () => {
-    bsCampaignDetailModal.hide();
-    document.getElementById("campaignDetailModal").addEventListener("hidden.bs.modal", () => {
-      bsCrowdfundingModal.show();
-    }, { once: true });
+  tbody.querySelectorAll("[data-ticket-payment-id]").forEach((button) => {
+    button.addEventListener("click", () => openTicketModal(Number(button.getAttribute("data-ticket-payment-id"))));
+  });
+  tbody.querySelectorAll("[data-history-id]").forEach((button) => {
+    button.addEventListener("click", () => viewPaymentHistory(Number(button.getAttribute("data-history-id"))));
+  });
+  tbody.querySelectorAll("[data-dispute-sender]").forEach((button) => {
+    button.addEventListener("click", () => openDisputeModal(Number(button.getAttribute("data-dispute-sender")), "SENDER"));
+  });
+  tbody.querySelectorAll("[data-dispute-receiver]").forEach((button) => {
+    button.addEventListener("click", () => openDisputeModal(Number(button.getAttribute("data-dispute-receiver")), "RECEIVER"));
   });
 }
 
-async function handleContribution() {
-  clearAlert("contributionAlertArea");
+async function handleCreatePayment(formKey = "modal") {
+  const ids = PAYMENT_FORM_IDS[formKey] || PAYMENT_FORM_IDS.modal;
+  clearAlert(ids.alertArea);
+  const sourceId = Number(getVal(ids.source));
+  const destinationId = Number(getVal(ids.destination));
+  const amount = Number(getVal(ids.amount));
+  const currencyCode = getVal(ids.currency);
+  const destinationCurrencyCode = getVal(ids.destinationCurrency);
 
-  if (!selectedCampaign) return;
-  const userId = resolveCurrentUserId();
-  if (!userId) {
-    return setAlert("contributionAlertArea", "Current user id is missing. Please go back and select your account again.", "warning");
+  if (!sourceId || !destinationId || !amount || amount <= 0) {
+    setAlert(ids.alertArea, "Please fill all payment fields correctly.", "warning");
+    return;
+  }
+  if (!SUPPORTED_UI_CURRENCIES.includes(currencyCode) || !SUPPORTED_UI_CURRENCIES.includes(destinationCurrencyCode)) {
+    setAlert(ids.alertArea, "Only INR and USD payments are supported.", "warning");
+    return;
   }
 
-  const amount = Number(document.getElementById("contributionAmount").value);
-  if (!amount || amount <= 0)
-    return setAlert("contributionAlertArea", "Please enter a valid contribution amount.", "warning");
-
-  const bucketId = selectedCampaign.bucketAccountId;
-  if (!bucketId)
-    return setAlert("contributionAlertArea", "Campaign has no bucket account configured.", "danger");
-
-  const btn = document.getElementById("contributeBtn");
-  setLoading(btn, true, "Contributing…");
+  const { msg, isCross, involvesUsd } =
+    buildPaymentConfirmMsg(amount, currencyCode, destinationCurrencyCode, "Payment");
+  if (!window.confirm(msg)) return;
 
   try {
-    const cur = selectedAccount.currencyCode || selectedCampaign.targetCurrency;
-    const created = await fetchJson(`/api/campaigns/${selectedCampaign.id}/contribute`, {
+    const created = await fetchJson("/api/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        userId,
-        sourceAccountId: selectedAccount.id,
+        userId: state.userId,
+        sourceAccountId: sourceId,
+        destinationAccountId: destinationId,
         amount,
-        currencyCode: cur,
-        idempotencyKey: `${selectedCampaign.id}-${selectedAccount.id}-${amount}-${Date.now()}`
-      }),
+        currencyCode,
+        destinationCurrencyCode,
+        paymentType: "NORMAL_PAYMENT",
+        forexConfirmed: involvesUsd
+      })
     });
 
-    bsCampaignDetailModal.hide();
-    showToast("Contribution Sent! 🎉", `${created.paymentReference} — Thank you!`, "success");
     await loadAllData();
 
-  } catch (err) {
-    setAlert("contributionAlertArea", err.message || "Contribution failed. Try again.", "danger");
-  } finally {
-    setLoading(btn, false, '<i class="bi bi-heart-fill me-1"></i>Contribute');
+    if (created.status === "FAILED") {
+      const errMsg = created.errorCode || "Payment failed.";
+      setAlert(ids.alertArea, errMsg, "danger");
+      window.alert(`❌ Payment Failed\n\n${errMsg}`);
+      return;
+    }
+
+    if (formKey === "modal") bsPaymentModal.hide();
+    setVal(ids.amount, "");
+
+    const remaining = created.remainingDailyLimit != null
+      ? Number(created.remainingDailyLimit)
+      : Number(state.dashboard?.remainingDailyLimit || 0);
+    const actualFee = Number(created.forexFee || 0);
+    const actualFinal = Number(created.finalChargedAmount || amount);
+    const actualSourceEquivalent = Number(created.convertedAmount || amount);
+    window.alert(
+      `✅ Payment Successful!\n\n`
+      + `Destination amount:    ${fmtAmt(created.amount || amount)} ${destinationCurrencyCode}\n`
+      + `Source equivalent:     ${fmtAmt(actualSourceEquivalent)} ${currencyCode}\n`
+      + (isCross ? `Exchange rate:         ${currencyCode}->${destinationCurrencyCode} = ${Number(created.exchangeRate || 1).toFixed(6)}\n` : "")
+      + (actualFee > 0 ? `Forex fee (1.8%):      ${fmtAmt(actualFee)} ${currencyCode}\n` : "")
+      + `Final charged:         ${fmtAmt(actualFinal)} ${currencyCode}\n`
+      + `Remaining daily limit: ${fmtAmt(remaining)}`
+    );
+  } catch (error) {
+    const message = error.message || "Payment failed.";
+    setAlert(ids.alertArea, message, "danger");
+    window.alert(`❌ Payment Failed\n\n${message}`);
   }
 }
 
-/* ============================================================
-   PAYMENT HISTORY MODAL
-   ============================================================ */
+function renderCampaigns() {
+  const grid = document.getElementById("campaignsGrid");
+  if (!grid) return;
+
+  const badge = document.getElementById("campaignCountBadge");
+  if (badge) {
+    const activeCount = state.campaigns.filter((c) => c.status === "ACTIVE").length;
+    badge.textContent = `${activeCount} Active`;
+  }
+
+  if (!state.campaigns.length) {
+    grid.innerHTML = '<div class="col-12 text-center text-muted py-4">No active campaigns yet. Create one with the button above!</div>';
+    return;
+  }
+
+  const sourceOptions = state.accounts
+    .filter((a) => String(a.accountStatus || "").toUpperCase() === "ACTIVE")
+    .map((a) => `<option value="${a.id}">${a.id} - ${esc(a.accountHolderName)} (${a.currencyCode})</option>`)
+    .join("");
+
+  grid.innerHTML = state.campaigns.map((campaign) => {
+    const raised = Number(campaign.currentAmount || 0);
+    const target = Number(campaign.targetAmount || 0);
+    const remaining = Math.max(0, target - raised);
+    const pct = target > 0 ? Math.min(100, (raised / target) * 100) : 0;
+    const deadline = campaign.campaignEndDate;
+    const daysLeft = deadline
+      ? Math.max(0, Math.ceil((new Date(deadline + "T00:00:00") - new Date()) / 86400000))
+      : null;
+    const category = campaign.donationCategory || "";
+    const isCompleted = String(campaign.status || "").toUpperCase() === "COMPLETED";
+    const fillHeight = Math.max(2, pct);
+    return `
+      <div class="col-md-6">
+        <div class="pf-card p-3 h-100 d-flex flex-column campaign-bucket-card ${isCompleted ? "campaign-completed" : ""}">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <h6 class="fw-bold mb-0">${esc(campaign.campaignName || `Campaign #${campaign.id}`)}</h6>
+            ${category ? `<span class="badge bg-info text-dark ms-1 flex-shrink-0">${esc(category)}</span>` : ""}
+          </div>
+          <p class="small text-muted mb-2">${esc(campaign.description || "")}</p>
+
+          <div class="campaign-bucket-wrap mb-2">
+            <div class="campaign-bucket" title="${pct.toFixed(1)}% funded">
+              <div class="campaign-bucket-fill" style="height:${fillHeight.toFixed(1)}%"></div>
+            </div>
+            <div class="small text-muted text-center mt-1">Bucket Fill: ${pct.toFixed(1)}%</div>
+          </div>
+
+          <div class="d-flex justify-content-between small text-muted mb-2">
+            <span>${pct.toFixed(1)}% funded</span>
+            <span><span class="badge ${isCompleted ? "bg-success" : "bg-primary"}">${esc(campaign.status || "ACTIVE")}</span></span>
+          </div>
+          <div class="row g-1 small mb-2 text-center">
+            <div class="col-4"><div class="text-muted">Collected</div><div class="fw-semibold text-success">${esc(campaign.targetCurrency)} ${fmtAmt(raised)}</div></div>
+            <div class="col-4"><div class="text-muted">Remaining</div><div class="fw-semibold text-warning">${esc(campaign.targetCurrency)} ${fmtAmt(remaining)}</div></div>
+            <div class="col-4"><div class="text-muted">Target</div><div class="fw-semibold">${esc(campaign.targetCurrency)} ${fmtAmt(target)}</div></div>
+          </div>
+          <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
+            ${deadline ? `<span><i class="bi bi-calendar3 me-1"></i>Deadline: ${deadline}</span>` : ""}
+            ${daysLeft !== null ? `<span><i class="bi bi-clock me-1"></i>${daysLeft} day${daysLeft !== 1 ? "s" : ""} left</span>` : ""}
+          </div>
+          <div class="mt-auto ${isCompleted ? "opacity-75" : ""}">
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">Donate from account</label>
+              <select class="form-select form-select-sm" id="donateAccount-${campaign.id}" ${isCompleted ? "disabled" : ""}>${sourceOptions}</select>
+            </div>
+            <div class="input-group">
+              <input type="number" min="0.01" step="0.01" class="form-control form-control-sm"
+                     id="donate-${campaign.id}" placeholder="Amount (${esc(campaign.targetCurrency)})" ${isCompleted ? "disabled" : ""}>
+              <button class="btn btn-success btn-sm" data-donate-id="${campaign.id}" ${isCompleted ? "disabled" : ""}>
+                <i class="bi bi-heart-fill me-1"></i>Donate
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  grid.querySelectorAll("[data-donate-id]").forEach((button) => {
+    button.addEventListener("click", () => handleDonate(Number(button.getAttribute("data-donate-id"))));
+  });
+}
+
+
+async function handleDonate(campaignId) {
+  const campaign = state.campaigns.find((item) => Number(item.id) === Number(campaignId));
+  if (!campaign) return;
+  if (String(campaign.status || "").toUpperCase() === "COMPLETED") {
+    showToast("Campaign completed", "This campaign already reached its target. Further donations are disabled.", "info");
+    return;
+  }
+  const amount = Number(getVal(`donate-${campaignId}`));
+  if (!amount || amount <= 0) {
+    showToast("Invalid amount", "Enter contribution amount greater than zero.", "warning");
+    return;
+  }
+
+  const sourceAccountId = Number(getVal(`donateAccount-${campaignId}`)) || state.selectedAccount.id;
+  const sourceAccount = state.allAccounts.find((a) => Number(a.id) === sourceAccountId) || state.selectedAccount;
+  const sourceCurrency = sourceAccount.currencyCode;
+  const destinationCurrency = campaign.targetCurrency;
+
+  if (!SUPPORTED_UI_CURRENCIES.includes(sourceCurrency) || !SUPPORTED_UI_CURRENCIES.includes(destinationCurrency)) {
+    showToast("Unsupported currency", "Only INR and USD campaigns are supported.", "warning");
+    return;
+  }
+
+  const { msg, isCross, involvesUsd } =
+    buildPaymentConfirmMsg(amount, sourceCurrency, destinationCurrency, `Donation to "${campaign.campaignName}"`);
+  if (!window.confirm(msg)) return;
+
+  try {
+    const payment = await fetchJson(`/api/campaigns/${campaignId}/contribute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: state.userId,
+        sourceAccountId,
+        amount,
+        currencyCode: sourceCurrency,
+        idempotencyKey: `${campaignId}-${sourceAccountId}-${amount}-${Date.now()}`,
+        forexConfirmed: involvesUsd
+      })
+    });
+    await loadAllData();
+    if (payment.status === "FAILED") {
+      showToast("Donation failed", payment.errorCode || "Failed", "danger");
+      window.alert(`❌ Donation Failed\n\n${payment.errorCode || "Validation failed."}`);
+      return;
+    }
+    showToast("Donation processed", `${payment.paymentReference} — ${payment.status}`, "success");
+    const remaining = payment.remainingDailyLimit != null
+      ? Number(payment.remainingDailyLimit)
+      : Number(state.dashboard?.remainingDailyLimit || 0);
+    const actualFee = Number(payment.forexFee || 0);
+    const actualSourceEquivalent = Number(payment.convertedAmount || amount);
+    window.alert(
+      `✅ Donation Successful!\n\nCampaign: ${campaign.campaignName}\n`
+      + `Destination amount:    ${fmtAmt(amount)} ${destinationCurrency}\n`
+      + `Source equivalent:     ${fmtAmt(actualSourceEquivalent)} ${sourceCurrency}\n`
+      + (isCross ? `Exchange rate:         ${sourceCurrency}->${destinationCurrency} = ${Number(payment.exchangeRate || 1).toFixed(6)}\n` : "")
+      + (actualFee > 0 ? `Forex fee (1.8%):      ${fmtAmt(actualFee)} ${sourceCurrency}\n` : "")
+      + `Remaining daily limit: ${fmtAmt(remaining)}`
+    );
+  } catch (error) {
+    window.alert(`❌ Donation Failed\n\n${error.message || "Donation failed."}`);
+  }
+}
+
+function openTicketModal(paymentId) {
+  state.currentTicketPaymentId = paymentId;
+  setVal("ticketPaymentId", String(paymentId));
+  setVal("ticketTitle", "");
+  setVal("ticketDescription", "");
+  setVal("ticketIssueType", "FAILED_PAYMENT");
+  setVal("ticketPriority", "MEDIUM");
+  clearAlert("ticketAlertArea");
+  bsTicketModal.show();
+}
+
+function openDisputeModal(paymentId, role) {
+  const payment = state.payments.find(p => Number(p.id) === paymentId);
+  if (!payment) return;
+
+  const isSender = (role === "SENDER");
+  document.getElementById("disputeModalTitle").textContent = isSender
+    ? "Wrong Recipient Dispute"
+    : "Report Unexpected Payment";
+
+  // Identify the account belonging to this user for the dispute
+  const myAccountIds = new Set(state.accounts.map(a => Number(a.id)));
+  const myAccountId  = isSender
+    ? (myAccountIds.has(Number(payment.sourceAccountId))      ? payment.sourceAccountId      : null)
+    : (myAccountIds.has(Number(payment.destinationAccountId)) ? payment.destinationAccountId : null);
+
+  setVal("disputePaymentId", String(paymentId));
+  setVal("disputeRole",      role);
+  setVal("disputeDescription", "");
+  setVal("disputeIssueType",   isSender ? "WRONG_RECIPIENT" : "OTHER");
+  setVal("disputePriority",    "HIGH");
+  clearAlert("disputeAlertArea");
+
+  // Payment summary card
+  document.getElementById("disputePaymentSummary").innerHTML = `
+    <div class="row g-1">
+      <div class="col-6"><span class="text-muted">Reference:</span> <strong>${esc(payment.paymentReference || "-")}</strong></div>
+      <div class="col-6"><span class="text-muted">Status:</span> <span class="badge ${badgeClass(payment.status)}">${esc(payment.status)}</span></div>
+      <div class="col-6"><span class="text-muted">Sender:</span> ${esc(accountName(payment.sourceAccountId))}</div>
+      <div class="col-6"><span class="text-muted">Receiver:</span> ${esc(accountName(payment.destinationAccountId))}</div>
+      <div class="col-6"><span class="text-muted">Amount:</span> ${esc(payment.destinationCurrencyCode || payment.currencyCode)} ${fmtAmt(payment.amount)}</div>
+      <div class="col-6"><span class="text-muted">Your role:</span> <strong>${esc(role)}</strong></div>
+    </div>
+  `;
+
+  bsDisputeModal.show();
+}
+
+async function handleCreateDispute() {
+  clearAlert("disputeAlertArea");
+  const paymentId   = Number(getVal("disputePaymentId"));
+  const role        = getVal("disputeRole");
+  const description = getVal("disputeDescription").trim();
+  const issueType   = getVal("disputeIssueType");
+  const priority    = getVal("disputePriority");
+
+  if (!paymentId || !description) {
+    setAlert("disputeAlertArea", "Description is required.", "warning");
+    return;
+  }
+
+  const payment = state.payments.find(p => Number(p.id) === paymentId);
+  if (!payment) return;
+
+  const myAccountIds = new Set(state.accounts.map(a => Number(a.id)));
+  const accountId    = role === "SENDER"
+    ? (myAccountIds.has(Number(payment.sourceAccountId))      ? payment.sourceAccountId      : null)
+    : (myAccountIds.has(Number(payment.destinationAccountId)) ? payment.destinationAccountId : null);
+
+  if (!accountId) {
+    setAlert("disputeAlertArea", "Could not determine your account for this transaction.", "danger");
+    return;
+  }
+
+  const title = role === "SENDER"
+    ? `Wrong Recipient – ${payment.paymentReference || `#${paymentId}`}`
+    : `Unexpected Payment – ${payment.paymentReference || `#${paymentId}`}`;
+
+  try {
+    await fetchJson(`/api/payments/${paymentId}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: state.userId,
+        title,
+        description,
+        issueType,
+        priority
+      })
+    });
+    bsDisputeModal.hide();
+    await loadAllData();
+    showToast("Dispute submitted", `${title} has been filed.`, "success");
+  } catch (error) {
+    setAlert("disputeAlertArea", error.message || "Unable to submit dispute.", "danger");
+  }
+}
+
+async function handleCreateTicket() {
+  clearAlert("ticketAlertArea");
+  const paymentId = Number(getVal("ticketPaymentId"));
+  const title = getVal("ticketTitle");
+  const description = getVal("ticketDescription");
+  const issueType = getVal("ticketIssueType");
+  const priority = getVal("ticketPriority");
+
+  if (!paymentId || !description.trim()) {
+    setAlert("ticketAlertArea", "Title/description and related transaction are required.", "warning");
+    return;
+  }
+
+  try {
+    await fetchJson(`/api/payments/${paymentId}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: state.userId, title, description, issueType, priority })
+    });
+    bsTicketModal.hide();
+    await loadAllData();
+    showToast("Ticket created", "Support ticket linked to transaction.", "success");
+  } catch (error) {
+    setAlert("ticketAlertArea", error.message || "Unable to create ticket.", "danger");
+  }
+}
+
+function renderTicketsTable() {
+  const tbody = document.getElementById("ticketsTableBody");
+  if (!tbody) return;
+  if (!state.tickets.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No tickets found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = state.tickets
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .map((ticket) => `
+      <tr>
+        <td>${esc(ticket.ticketNumber || `T-${ticket.id}`)}</td>
+        <td>${ticket.paymentId || "-"}</td>
+        <td>${esc(ticket.title || "-")}</td>
+        <td>${esc(ticket.priority || "-")}</td>
+        <td>
+          <select class="form-select form-select-sm" data-ticket-status-id="${ticket.id}">
+            ${["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"].map((status) => `<option value="${status}" ${ticket.status === status ? "selected" : ""}>${status}</option>`).join("")}
+          </select>
+        </td>
+        <td>${fmtDate(ticket.createdAt)}</td>
+        <td><button class="btn btn-sm btn-outline-primary" data-ticket-update-id="${ticket.id}">Update</button></td>
+      </tr>
+    `).join("");
+
+  tbody.querySelectorAll("[data-ticket-update-id]").forEach((button) => {
+    button.addEventListener("click", () => updateTicket(Number(button.getAttribute("data-ticket-update-id"))));
+  });
+}
+
+async function updateTicket(ticketId) {
+  const select = document.querySelector(`[data-ticket-status-id='${ticketId}']`);
+  if (!select) return;
+  const status = select.value;
+  try {
+    await fetchJson(`/api/tickets/${ticketId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, resolutionSummary: status === "RESOLVED" ? "Resolved by user" : null })
+    });
+    await loadAllData();
+    showToast("Ticket updated", `Ticket set to ${status}.`, "success");
+  } catch (error) {
+    showToast("Update failed", error.message || "Unable to update ticket", "danger");
+  }
+}
+
+function syncProfileSection() {
+  setVal("profileName", state.user?.fullName || "");
+  setVal("profileEmail", state.user?.email || "");
+  setVal("profileAccounts", String(state.accounts.length));
+  setVal("profileDailyLimit", state.user?.dailyTransactionLimit != null ? String(state.user.dailyTransactionLimit) : "5000.00");
+}
+
+async function handleProfileUpdate() {
+  const limit = Number(getVal("profileDailyLimit"));
+  if (!limit || limit <= 0) {
+    showToast("Invalid limit", "Daily transaction limit must be greater than zero.", "warning");
+    return;
+  }
+  try {
+    await fetchJson(`/api/users/${state.userId}/daily-limit`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyTransactionLimit: limit })
+    });
+    await loadAllData();
+    showToast("Profile updated", "Daily transaction limit saved.", "success");
+  } catch (error) {
+    showToast("Update failed", error.message || "Unable to update profile", "danger");
+  }
+}
+
+function exportCsv() {
+  if (!state.filteredPayments.length) {
+    showToast("No data", "No filtered transactions to export.", "warning");
+    return;
+  }
+  const headers = [
+    "Transaction Reference", "Date", "Sender", "Receiver", "Original Amount", "Source Currency",
+    "Destination Currency", "Converted Amount", "Exchange Rate", "Forex Fee",
+    "Final Charged Amount", "Payment Type", "Status", "Failure Reason"
+  ];
+  const rows = state.filteredPayments.map((payment) => [
+    payment.paymentReference || "",
+    fmtDate(payment.createdAt),
+    accountName(payment.sourceAccountId),
+    accountName(payment.destinationAccountId),
+    fmtAmt(payment.amount),
+    payment.currencyCode || "",
+    payment.destinationCurrencyCode || "",
+    fmtAmt(payment.convertedAmount || 0),
+    payment.exchangeRate != null ? Number(payment.exchangeRate).toFixed(6) : "",
+    fmtAmt(payment.forexFee || 0),
+    fmtAmt(payment.finalChargedAmount || payment.amount || 0),
+    payment.paymentType || "",
+    payment.status || "",
+    payment.errorCode || ""
+  ]);
+
+  const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `transactions-${Date.now()}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportPdf() {
+  if (!state.filteredPayments.length) {
+    showToast("No data", "No filtered transactions to export.", "warning");
+    return;
+  }
+
+  const html = `
+    <html><head><title>Filtered Transactions</title></head><body>
+      <h3>Filtered Transaction Report</h3>
+      <table border="1" cellspacing="0" cellpadding="6">
+        <thead><tr><th>Reference</th><th>Date</th><th>Sender</th><th>Receiver</th><th>Original</th><th>Src Curr</th><th>Dest Curr</th><th>Converted</th><th>Rate</th><th>Forex Fee</th><th>Final Charged</th><th>Type</th><th>Status</th><th>Failure Reason</th></tr></thead>
+        <tbody>
+          ${state.filteredPayments.map((payment) => `
+            <tr>
+              <td>${esc(payment.paymentReference || "")}</td>
+              <td>${esc(fmtDate(payment.createdAt))}</td>
+              <td>${esc(accountName(payment.sourceAccountId))}</td>
+              <td>${esc(accountName(payment.destinationAccountId))}</td>
+              <td>${esc(fmtAmt(payment.amount))}</td>
+              <td>${esc(payment.currencyCode || "")}</td>
+              <td>${esc(payment.destinationCurrencyCode || "")}</td>
+              <td>${esc(fmtAmt(payment.convertedAmount || 0))}</td>
+              <td>${esc(payment.exchangeRate != null ? Number(payment.exchangeRate).toFixed(6) : "")}</td>
+              <td>${esc(fmtAmt(payment.forexFee || 0))}</td>
+              <td>${esc(fmtAmt(payment.finalChargedAmount || payment.amount || 0))}</td>
+              <td>${esc(payment.paymentType || "")}</td>
+              <td>${esc(payment.status || "")}</td>
+              <td>${esc(payment.errorCode || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </body></html>
+  `;
+
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    showToast("Blocked", "Popup blocked. Allow popups to export PDF.", "warning");
+    return;
+  }
+  popup.document.write(html);
+  popup.document.close();
+  popup.focus();
+  popup.print();
+}
+
 async function viewPaymentHistory(paymentId) {
-  const payment = allPayments.find(p => p.id === paymentId);
+  const payment = state.payments.find((item) => Number(item.id) === Number(paymentId));
   if (!payment) return;
 
   document.getElementById("paymentDetailArea").innerHTML = `
-    <div class="row g-2 pf-surface-2 p-3 mb-1">
-      <div class="col-6">
-        <small class="text-muted d-block">Reference</small>
-        <span class="fw-semibold small">${esc(payment.paymentReference || "–")}</span>
-      </div>
-      <div class="col-6">
-        <small class="text-muted d-block">Amount</small>
-        <span class="fw-semibold small">${esc(payment.currencyCode)} ${fmtAmt(payment.amount)}</span>
-      </div>
-      <div class="col-6">
-        <small class="text-muted d-block">Status</small>
-        <span class="badge ${badgeClass(payment.status)}">${esc(payment.status)}</span>
-      </div>
-      <div class="col-6">
-        <small class="text-muted d-block">Type</small>
-        <span class="small">${esc(payment.paymentType || "–")}</span>
-      </div>
-      <div class="col-6">
-        <small class="text-muted d-block">Source</small>
-        <span class="small">#${payment.sourceAccountId}</span>
-      </div>
-      <div class="col-6">
-        <small class="text-muted d-block">Destination</small>
-        <span class="small">#${payment.destinationAccountId}</span>
-      </div>
-    </div>`;
+    <div class="row g-2 pf-surface-2 p-3">
+      <div class="col-6"><small class="text-muted d-block">Reference</small><span>${esc(payment.paymentReference || "-")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Original Amount</small><span>${fmtAmt(payment.amount)} ${esc(payment.destinationCurrencyCode || "")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Source Currency</small><span>${esc(payment.currencyCode || "-")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Destination Currency</small><span>${esc(payment.destinationCurrencyCode || "-")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Converted Amount</small><span>${fmtAmt(payment.convertedAmount || 0)} ${esc(payment.currencyCode || "")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Exchange Rate</small><span>${payment.exchangeRate != null ? Number(payment.exchangeRate).toFixed(6) : "-"}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Forex Fee</small><span>${fmtAmt(payment.forexFee || 0)} ${esc(payment.currencyCode || "")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Final Charged</small><span>${fmtAmt(payment.finalChargedAmount || payment.amount || 0)} ${esc(payment.currencyCode || "")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Status</small><span>${esc(payment.status || "-")}</span></div>
+      <div class="col-6"><small class="text-muted d-block">Failure</small><span>${esc(payment.errorCode || "-")}</span></div>
+    </div>
+  `;
 
-  document.getElementById("paymentHistoryArea").innerHTML =
-    '<div class="text-center py-2"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
-
+  document.getElementById("paymentHistoryArea").innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
   bsHistoryModal.show();
 
   try {
     const history = await fetchJson(`/api/payments/${paymentId}/history`);
-
-    if (!history || history.length === 0) {
-      document.getElementById("paymentHistoryArea").innerHTML =
-        '<p class="text-muted text-center py-2 small">No history available.</p>';
+    if (!Array.isArray(history) || !history.length) {
+      document.getElementById("paymentHistoryArea").innerHTML = '<p class="text-muted small text-center py-2">No history found.</p>';
       return;
     }
-
-    document.getElementById("paymentHistoryArea").innerHTML = `
-      <div class="list-group list-group-flush">
-        ${history.map(h => `
-          <div class="list-group-item px-0 border-0 py-2">
-            <div class="d-flex align-items-start gap-2">
-              <div class="pf-timeline-dot mt-1"></div>
-              <div>
-                <span class="fw-semibold small">${esc(h.fromStatus || "–")} → ${esc(h.toStatus)}</span>
-                <small class="text-muted d-block">${fmtDate(h.changedAt)}</small>
-              </div>
-            </div>
-          </div>`).join("")}
-      </div>`;
+    document.getElementById("paymentHistoryArea").innerHTML = history.map((item) => `
+      <div class="border-bottom py-2">
+        <div class="small fw-semibold">${esc(item.fromStatus || "-")} -> ${esc(item.toStatus || "-")}</div>
+        <div class="small text-muted">${fmtDate(item.changedAt)} | ${esc(item.description || "Status updated")}</div>
+      </div>
+    `).join("");
   } catch {
-    document.getElementById("paymentHistoryArea").innerHTML =
-      '<p class="text-muted text-center py-2 small">Could not load history.</p>';
+    document.getElementById("paymentHistoryArea").innerHTML = '<p class="text-muted small text-center py-2">Could not load payment history.</p>';
   }
 }
 
-/* ============================================================
-   BUTTONS / REFRESH
-   ============================================================ */
-function initButtons() {
-  document.getElementById("refreshBtn")?.addEventListener("click", async () => {
-    await loadAllData();
-    showToast("Refreshed", "All data reloaded.", "info");
-  });
-
-  document.getElementById("refreshPaymentsBtn")?.addEventListener("click", async () => {
-    try {
-      allPayments  = await fetchJson("/api/payments");
-      allAccounts  = await fetchJson("/api/accounts");
-      const fresh  = allAccounts.find(a => a.id === selectedAccount.id);
-      if (fresh) { selectedAccount = fresh; localStorage.setItem(ACCOUNT_KEY, JSON.stringify(fresh)); }
-      renderStats();
-      renderPaymentsTable();
-      showToast("Updated", "Transactions refreshed.", "success");
-    } catch {
-      showToast("Error", "Failed to refresh transactions.", "danger");
-    }
-  });
+function accountName(accountId) {
+  const account = state.allAccounts.find((item) => Number(item.id) === Number(accountId));
+  return account ? `${account.accountHolderName} (#${account.id})` : `Account #${accountId}`;
 }
 
-/* ============================================================
-   THEME
-   ============================================================ */
+async function fetchJson(path, options) {
+  const response = await fetch(`${API_BASE}${path}`, options);
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const data = await response.json();
+      if (data && typeof data.message === "string") {
+        message = data.message;
+      }
+    } catch {
+      try {
+        message = await response.text();
+      } catch {
+        // Ignore.
+      }
+    }
+    throw new Error(message);
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
 function applySavedTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved === "dark" || saved === "light") {
@@ -659,14 +1002,12 @@ function applySavedTheme() {
   }
 }
 
-function initThemeToggle() {
-  document.getElementById("themeToggle")?.addEventListener("click", () => {
-    const cur  = document.documentElement.getAttribute("data-bs-theme") || "light";
-    const next = cur === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-bs-theme", next);
-    localStorage.setItem(THEME_KEY, next);
-    syncThemeIcon(next);
-  });
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-bs-theme") || "light";
+  const next = current === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-bs-theme", next);
+  localStorage.setItem(THEME_KEY, next);
+  syncThemeIcon(next);
 }
 
 function syncThemeIcon(theme) {
@@ -674,83 +1015,54 @@ function syncThemeIcon(theme) {
   if (icon) icon.className = theme === "dark" ? "bi bi-moon-fill" : "bi bi-sun-fill";
 }
 
-/* ============================================================
-   UTILITIES
-   ============================================================ */
-async function fetchJson(path, options) {
-  const url  = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const resp = await fetch(url, options);
-  if (!resp.ok) {
-    let msg = `Request failed (${resp.status})`;
-    try { const d = await resp.json(); if (d?.message) msg = d.message; } catch {}
-    throw new Error(msg);
-  }
-  if (resp.status === 204) return null;
-  return resp.json();
+function setIfValue(params, key, value) {
+  if (value != null && String(value).trim() !== "") params.set(key, String(value).trim());
 }
 
-function initials(name) {
-  return (name || "?").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+function getVal(id) {
+  const element = document.getElementById(id);
+  return element ? element.value : "";
 }
 
-function fmtAmt(v) {
-  const n = Number(v);
-  return isNaN(n) ? "0.00" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function setVal(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.value = value;
 }
 
-function fmtDate(v) {
-  if (!v) return "–";
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+function fmtAmt(value) {
+  const amount = Number(value);
+  return Number.isNaN(amount) ? "0.00" : amount.toFixed(2);
+}
+
+function fmtDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function badgeClass(status) {
   const map = {
-    CREATED: "badge-created", VALIDATED: "badge-validated", SENT: "badge-sent",
-    COMPLETED: "badge-completed", SUCCESS: "badge-success",
-    FAILED: "badge-failed",    CANCELLED: "badge-cancelled", INITIATED: "badge-initiated",
+    CREATED: "badge-created",
+    VALIDATED: "badge-validated",
+    PROCESSING: "badge-sent",
+    COMPLETED: "badge-completed",
+    SUCCESS: "badge-success",
+    FAILED: "badge-failed",
+    CANCELLED: "badge-cancelled"
   };
-  return map[(status || "").toUpperCase()] || "bg-secondary";
+  return map[String(status || "").toUpperCase()] || "bg-secondary";
 }
 
-function resolveCurrentUserId() {
-  if (selectedAccount?.user?.id != null) {
-    return Number(selectedAccount.user.id);
-  }
-  const fresh = allAccounts.find(account => account.id === selectedAccount?.id);
-  if (fresh?.user?.id != null) {
-    return Number(fresh.user.id);
-  }
-  return null;
-}
-
-function esc(str) {
-  return String(str ?? "").replace(/[&<>"']/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-function show(id)  { document.getElementById(id)?.classList.remove("d-none"); }
-function hide(id)  { document.getElementById(id)?.classList.add("d-none"); }
-function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
-function setEl(id, fn)    { const el = document.getElementById(id); if (el) fn(el); }
-
-function setLoading(btn, loading, label) {
-  if (!btn) return;
-  btn.disabled  = loading;
-  btn.innerHTML = loading
-    ? `<span class="spinner-border spinner-border-sm me-1" role="status"></span>${label}`
-    : label;
-}
-
-function setAlert(areaId, msg, type) {
+function setAlert(areaId, message, type) {
   const area = document.getElementById(areaId);
   if (!area) return;
-  area.innerHTML = `
-    <div class="alert alert-${type} py-2 small d-flex align-items-center gap-2 mb-2">
-      <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
-      ${esc(msg)}
-    </div>`;
+  area.innerHTML = `<div class="alert alert-${type} py-2 small mb-2">${esc(message)}</div>`;
 }
 
 function clearAlert(areaId) {
@@ -758,22 +1070,31 @@ function clearAlert(areaId) {
   if (area) area.innerHTML = "";
 }
 
-function showGlobalAlert(msg, type) {
+function showGlobalAlert(message, type) {
   const area = document.getElementById("globalAlertArea");
-  if (area) area.innerHTML = `
-    <div class="alert alert-${type} alert-dismissible d-flex align-items-center gap-2">
-      <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
-      <span>${esc(msg)}</span>
-      <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
-    </div>`;
+  if (!area) return;
+  area.innerHTML = `<div class="alert alert-${type}">${esc(message)}</div>`;
+}
+
+function clearGlobalAlert() {
+  const area = document.getElementById("globalAlertArea");
+  if (area) area.innerHTML = "";
 }
 
 function showToast(title, message, type) {
-  const icons = { success: "bi-check-circle-fill text-success", danger: "bi-x-circle-fill text-danger",
-                  warning: "bi-exclamation-triangle-fill text-warning", info: "bi-info-circle-fill text-info" };
-  setEl("toastIcon",  el => { el.className = `bi ${icons[type] || icons.info} fs-5`; });
+  const icons = {
+    success: "bi-check-circle-fill text-success",
+    danger: "bi-x-circle-fill text-danger",
+    warning: "bi-exclamation-triangle-fill text-warning",
+    info: "bi-info-circle-fill text-info"
+  };
+  const icon = document.getElementById("toastIcon");
+  if (icon) icon.className = `bi ${icons[type] || icons.info} fs-5`;
   setText("toastTitle", title);
-  setText("toastBody",  message);
+  setText("toastBody", message);
   bsToast.show();
 }
 
+function esc(str) {
+  return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}

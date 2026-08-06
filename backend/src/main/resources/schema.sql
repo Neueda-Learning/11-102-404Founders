@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS crowdfunding_campaigns (
     donation_category    VARCHAR(120),
     donation_options     TEXT,
     bucket_account_id    BIGINT NOT NULL,
+    creator_payout_account_id BIGINT,
     target_amount        DECIMAL(15, 2) NOT NULL,
     target_currency      VARCHAR(3) NOT NULL,
     current_amount       DECIMAL(15, 2) DEFAULT 0.00,
@@ -43,7 +44,8 @@ CREATE TABLE IF NOT EXISTS crowdfunding_campaigns (
     status               ENUM('ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'ACTIVE',
     campaign_end_date    DATE,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (bucket_account_id) REFERENCES accounts(account_id)
+    FOREIGN KEY (bucket_account_id) REFERENCES accounts(account_id),
+    FOREIGN KEY (creator_payout_account_id) REFERENCES accounts(account_id)
 );
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -54,7 +56,9 @@ CREATE TABLE IF NOT EXISTS payments (
     destination_account_id   BIGINT NOT NULL,
     amount                   DECIMAL(15, 2) NOT NULL,
     converted_amount         DECIMAL(15, 2),
+    exchange_rate            DECIMAL(15, 6),
     forex_fee                DECIMAL(15, 2),
+    final_charged_amount     DECIMAL(15, 2),
     currency_code            VARCHAR(3) NOT NULL,
     destination_currency_code VARCHAR(3) NOT NULL DEFAULT 'INR',
     payment_type             ENUM('NORMAL_PAYMENT', 'CROWDFUNDING_PAYMENT', 'REGULAR', 'CROWDFUNDING') NOT NULL DEFAULT 'NORMAL_PAYMENT',
@@ -93,7 +97,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     title              VARCHAR(255) NOT NULL,
     description        TEXT NOT NULL,
     failure_reason     TEXT,
-    ticket_type        ENUM('GENERAL', 'FAILED_PAYMENT', 'WRONG_RECIPIENT', 'DUPLICATE_PAYMENT', 'DAILY_LIMIT_EXCEEDED', 'INSUFFICIENT_FUNDS', 'CURRENCY_CONVERSION_ISSUE', 'OTHER', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL',
+    ticket_type        ENUM('GENERAL', 'FAILED_PAYMENT', 'WRONG_RECIPIENT', 'DUPLICATE_PAYMENT', 'DAILY_LIMIT_EXCEEDED', 'INSUFFICIENT_FUNDS', 'FOREX_ISSUE', 'REFUND_REQUEST', 'CURRENCY_CONVERSION_ISSUE', 'OTHER', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL',
     dispute_role       ENUM('NONE', 'SENDER', 'RECEIVER') NOT NULL DEFAULT 'NONE',
     recovery_requested BOOLEAN DEFAULT FALSE,
     priority           ENUM('LOW', 'MEDIUM', 'HIGH', 'CRITICAL') NOT NULL DEFAULT 'MEDIUM',
@@ -214,6 +218,37 @@ SET @stmt = (
     SELECT IF(
         EXISTS (
             SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'crowdfunding_campaigns' AND column_name = 'creator_payout_account_id'
+        ),
+        'SELECT 1',
+        'ALTER TABLE crowdfunding_campaigns ADD COLUMN creator_payout_account_id BIGINT'
+    )
+);
+PREPARE s7a FROM @stmt;
+EXECUTE s7a;
+DEALLOCATE PREPARE s7a;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'crowdfunding_campaigns'
+              AND COLUMN_NAME = 'creator_payout_account_id'
+              AND REFERENCED_TABLE_NAME = 'accounts'
+        ),
+        'SELECT 1',
+        'ALTER TABLE crowdfunding_campaigns ADD CONSTRAINT fk_campaign_creator_payout_account FOREIGN KEY (creator_payout_account_id) REFERENCES accounts(account_id)'
+    )
+);
+PREPARE s7b FROM @stmt;
+EXECUTE s7b;
+DEALLOCATE PREPARE s7b;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
             WHERE table_schema = DATABASE() AND table_name = 'payments' AND column_name = 'idempotency_key'
         ),
         'SELECT 1',
@@ -237,6 +272,20 @@ SET @stmt = (
 PREPARE s9 FROM @stmt;
 EXECUTE s9;
 DEALLOCATE PREPARE s9;
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'payments' AND column_name = 'exchange_rate'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD COLUMN exchange_rate DECIMAL(15, 6)'
+    )
+);
+PREPARE s9a FROM @stmt;
+EXECUTE s9a;
+DEALLOCATE PREPARE s9a;
 
 SET @stmt = (
     SELECT IF(
@@ -268,7 +317,22 @@ DEALLOCATE PREPARE s11;
 
 ALTER TABLE payments
     MODIFY COLUMN payment_type ENUM('NORMAL_PAYMENT', 'CROWDFUNDING_PAYMENT', 'REGULAR', 'CROWDFUNDING') NOT NULL DEFAULT 'NORMAL_PAYMENT',
-    MODIFY COLUMN status ENUM('INITIATED', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED', 'CREATED', 'VALIDATED', 'SENT', 'COMPLETED') NOT NULL DEFAULT 'INITIATED';
+    MODIFY COLUMN status ENUM('INITIATED', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED', 'CREATED', 'VALIDATED', 'SENT', 'COMPLETED') NOT NULL DEFAULT 'INITIATED',
+    MODIFY COLUMN error_code VARCHAR(255);
+
+SET @stmt = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'payments' AND column_name = 'final_charged_amount'
+        ),
+        'SELECT 1',
+        'ALTER TABLE payments ADD COLUMN final_charged_amount DECIMAL(15, 2)'
+    )
+);
+PREPARE s11b FROM @stmt;
+EXECUTE s11b;
+DEALLOCATE PREPARE s11b;
 
 SET @stmt = (
     SELECT IF(
@@ -453,5 +517,5 @@ EXECUTE s24;
 DEALLOCATE PREPARE s24;
 
 ALTER TABLE support_tickets
-    MODIFY COLUMN ticket_type ENUM('GENERAL', 'FAILED_PAYMENT', 'WRONG_RECIPIENT', 'DUPLICATE_PAYMENT', 'DAILY_LIMIT_EXCEEDED', 'INSUFFICIENT_FUNDS', 'CURRENCY_CONVERSION_ISSUE', 'OTHER', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL';
+    MODIFY COLUMN ticket_type ENUM('GENERAL', 'FAILED_PAYMENT', 'WRONG_RECIPIENT', 'DUPLICATE_PAYMENT', 'DAILY_LIMIT_EXCEEDED', 'INSUFFICIENT_FUNDS', 'FOREX_ISSUE', 'REFUND_REQUEST', 'CURRENCY_CONVERSION_ISSUE', 'OTHER', 'DISPUTE_SENDER', 'DISPUTE_RECEIVER') NOT NULL DEFAULT 'GENERAL';
 

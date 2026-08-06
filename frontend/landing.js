@@ -1,5 +1,7 @@
 /* ============================================================
-   landing.js  –  PayFlow Hub account-selection page
+   landing.js  –  PayFlow Hub two-step landing page
+   Step 1: Select / Create User
+   Step 2: Select / Create Account for that user
    ============================================================ */
 
 const API_BASE = (window.PAYMENT_API_BASE ||
@@ -8,17 +10,23 @@ const API_BASE = (window.PAYMENT_API_BASE ||
 const THEME_KEY   = "PPS_THEME";
 const ACCOUNT_KEY = "PPS_SELECTED_ACCOUNT";
 
-let accounts = [];
-let createUserModal = null;
+let allUsers     = [];
+let allAccounts  = [];   // accounts for currently-selected user
+let selectedUser = null;
+
+let createUserModal    = null;
+let createAccountModal = null;
 
 /* ====== Init ====== */
 document.addEventListener("DOMContentLoaded", () => {
   requestAnimationFrame(() => document.body.classList.add("is-loaded"));
   applySavedTheme();
-  createUserModal = bootstrap.Modal.getOrCreateInstance(document.getElementById("createUserModal"));
+  createUserModal    = bootstrap.Modal.getOrCreateInstance(document.getElementById("createUserModal"));
+  createAccountModal = bootstrap.Modal.getOrCreateInstance(document.getElementById("createAccountModal"));
   initThemeToggle();
   initCreateUserFlow();
-  loadAccounts();
+  initCreateAccountFlow();
+  loadUsers();
 });
 
 /* ====== Theme ====== */
@@ -43,60 +51,126 @@ function initThemeToggle() {
 function updateThemeBtn(theme) {
   const icon  = document.getElementById("themeIcon");
   const label = document.getElementById("themeLabel");
-  if (icon)  icon.className  = theme === "dark" ? "bi bi-moon-fill me-1" : "bi bi-sun-fill me-1";
+  if (icon)  icon.className   = theme === "dark" ? "bi bi-moon-fill me-1" : "bi bi-sun-fill me-1";
   if (label) label.textContent = theme === "dark" ? "Dark" : "Light";
 }
 
-/* ====== Load accounts ====== */
-async function loadAccounts() {
+/* ====== STEP 1 – Load and render users ====== */
+async function loadUsers() {
   show("loadingState");
-  hide("accountsGrid");
+  hide("usersGrid");
   hide("errorState");
   hide("emptyState");
 
   try {
-    const res = await fetch(`${API_BASE}/api/accounts`);
+    const res = await fetch(`${API_BASE}/api/users`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    accounts = await res.json();
-
+    allUsers = await res.json();
     hide("loadingState");
 
-    if (!Array.isArray(accounts) || accounts.length === 0) {
+    if (!Array.isArray(allUsers) || allUsers.length === 0) {
       show("emptyState");
       return;
     }
-
-    renderAccounts(accounts);
-    show("accountsGrid");
-
+    renderUsers(allUsers);
+    show("usersGrid");
   } catch {
     hide("loadingState");
     show("errorState");
   }
 }
 
-/* ====== Render account cards ====== */
+function renderUsers(users) {
+  const grid = document.getElementById("usersGrid");
+  grid.innerHTML = users.map((user, i) => `
+    <div class="col-sm-6 col-lg-4 pf-in" style="animation-delay:${i * 0.07}s">
+      <div class="pf-card pf-card-clickable p-4 h-100" onclick="selectUser(${user.id})">
+        <div class="d-flex align-items-start gap-3 mb-3">
+          <div class="pf-avatar">${initials(user.fullName)}</div>
+          <div class="flex-grow-1 overflow-hidden">
+            <h6 class="fw-bold mb-0 text-truncate">${esc(user.fullName)}</h6>
+            <small class="text-muted">${esc(user.email || "")}</small>
+          </div>
+        </div>
+        <div class="mb-3 small text-muted">
+          <span class="me-3"><i class="bi bi-currency-exchange me-1"></i>${esc(user.defaultCurrency || "INR")}</span>
+          <span><i class="bi bi-speedometer2 me-1"></i>Limit: ${fmtAmt(user.dailyTransactionLimit || 5000)}</span>
+        </div>
+        <button class="btn btn-pf btn w-100 rounded-pill"
+                onclick="event.stopPropagation();selectUser(${user.id})">
+          <i class="bi bi-arrow-right-circle me-1"></i>Select User
+        </button>
+      </div>
+    </div>
+  `).join("");
+}
+
+/* ====== Transition to STEP 2 ====== */
+async function selectUser(userId) {
+  selectedUser = allUsers.find(u => u.id === userId) || null;
+  if (!selectedUser) return;
+
+  document.getElementById("userAvatarStep2").textContent = initials(selectedUser.fullName);
+  document.getElementById("userNameStep2").textContent   = selectedUser.fullName;
+  document.getElementById("userEmailStep2").textContent  = selectedUser.email || "";
+
+  hide("stepUser");
+  show("stepAccount");
+  await loadUserAccounts(userId);
+}
+
+function backToUsers() {
+  selectedUser = null;
+  hide("stepAccount");
+  hide("accountsGrid");
+  hide("accountsEmptyState");
+  show("stepUser");
+}
+
+/* ====== STEP 2 – Accounts for selected user ====== */
+async function loadUserAccounts(userId) {
+  show("accountsLoadingState");
+  hide("accountsGrid");
+  hide("accountsEmptyState");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/users/${userId}/accounts`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allAccounts = await res.json();
+    hide("accountsLoadingState");
+
+    if (!Array.isArray(allAccounts) || allAccounts.length === 0) {
+      show("accountsEmptyState");
+      return;
+    }
+    renderAccounts(allAccounts);
+    show("accountsGrid");
+  } catch {
+    hide("accountsLoadingState");
+    show("accountsEmptyState");
+  }
+}
+
 function renderAccounts(accs) {
   const grid = document.getElementById("accountsGrid");
   grid.innerHTML = accs.map((acc, i) => `
     <div class="col-sm-6 col-lg-4 pf-in" style="animation-delay:${i * 0.07}s">
       <div class="pf-card pf-card-clickable p-4 h-100" onclick="selectAccount(${acc.id})">
-        <div class="d-flex align-items-start gap-3 mb-3">
-          <div class="pf-avatar">${initials(acc.accountHolderName)}</div>
+        <div class="d-flex align-items-start gap-3 mb-2">
+          <div class="pf-avatar" style="font-size:.9rem">${esc(acc.currencyCode || "?")}</div>
           <div class="flex-grow-1 overflow-hidden">
-            <h6 class="fw-bold mb-0 text-truncate">${esc(acc.accountHolderName)}</h6>
-            <small class="text-muted">Account #${acc.id}</small>
+            <h6 class="fw-bold mb-0 text-truncate">${esc(acc.accountType || acc.accountHolderName || "Account")}</h6>
+            <small class="text-muted">${acc.accountNumber ? "#" + esc(acc.accountNumber) : "ID: " + acc.id}</small>
           </div>
-          <span class="badge ${acc.accountStatus === "ACTIVE" ? "bg-success" : "bg-secondary"} fs-xs">
+          <span class="badge ${acc.accountStatus === "ACTIVE" ? "bg-success" : "bg-secondary"} flex-shrink-0">
             ${esc(acc.accountStatus)}
           </span>
         </div>
-
+        <div class="mb-1 small text-muted">${esc(acc.bankName || "")}</div>
         <div class="mb-4">
           <small class="text-muted d-block mb-1">Available Balance</small>
           <h4 class="fw-bold text-primary mb-0">${esc(acc.currencyCode)} ${fmtAmt(acc.balance)}</h4>
         </div>
-
         <button class="btn btn-pf btn w-100 rounded-pill"
                 onclick="event.stopPropagation();selectAccount(${acc.id})">
           <i class="bi bi-arrow-right-circle me-1"></i>Select Account
@@ -106,7 +180,14 @@ function renderAccounts(accs) {
   `).join("");
 }
 
-/* ====== Create user + first account ====== */
+function selectAccount(id) {
+  const acc = allAccounts.find(a => a.id === id);
+  if (!acc) return;
+  localStorage.setItem(ACCOUNT_KEY, JSON.stringify(acc));
+  window.location.href = "dashboard.html";
+}
+
+/* ====== Create New User + first account ====== */
 function initCreateUserFlow() {
   document.getElementById("createUserBtn")?.addEventListener("click", createUserAndAccount);
 }
@@ -114,22 +195,18 @@ function initCreateUserFlow() {
 async function createUserAndAccount() {
   clearAlert("createUserAlertArea");
 
-  const fullName = document.getElementById("newUserFullName")?.value.trim();
-  const email = document.getElementById("newUserEmail")?.value.trim().toLowerCase();
-  const defaultCurrency = document.getElementById("newUserCurrency")?.value || "USD";
-  const accountType = document.getElementById("newUserAccountType")?.value.trim() || "Checking Account";
-  const bankName = document.getElementById("newUserBankName")?.value.trim() || "PayFlow Bank";
-  const openingBalance = Number(document.getElementById("newUserBalance")?.value || 0);
+  const fullName        = document.getElementById("newUserFullName")?.value.trim();
+  const email           = document.getElementById("newUserEmail")?.value.trim().toLowerCase();
+  const defaultCurrency = document.getElementById("newUserCurrency")?.value || "INR";
+  const accountType     = document.getElementById("newUserAccountType")?.value.trim() || "Checking Account";
+  const bankName        = document.getElementById("newUserBankName")?.value.trim() || "PayFlow Bank";
+  const openingBalance  = Number(document.getElementById("newUserBalance")?.value || 0);
+  const dailyLimit      = Number(document.getElementById("newUserDailyLimit")?.value || 5000);
 
-  if (!fullName) {
-    return setAlert("createUserAlertArea", "Full name is required.", "warning");
-  }
-  if (!email) {
-    return setAlert("createUserAlertArea", "Email is required.", "warning");
-  }
-  if (Number.isNaN(openingBalance) || openingBalance < 0) {
-    return setAlert("createUserAlertArea", "Opening balance cannot be negative.", "warning");
-  }
+  if (!fullName)                                           return setAlert("createUserAlertArea", "Full name is required.", "warning");
+  if (!email)                                              return setAlert("createUserAlertArea", "Email is required.", "warning");
+  if (Number.isNaN(openingBalance) || openingBalance < 0) return setAlert("createUserAlertArea", "Opening balance cannot be negative.", "warning");
+  if (Number.isNaN(dailyLimit)     || dailyLimit <= 0)    return setAlert("createUserAlertArea", "Daily limit must be greater than zero.", "warning");
 
   const btn = document.getElementById("createUserBtn");
   setLoading(btn, true, "Creating...");
@@ -138,15 +215,11 @@ async function createUserAndAccount() {
     const user = await fetchJson("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fullName,
-        email,
-        defaultCurrency
-      })
+      body: JSON.stringify({ fullName, email, defaultCurrency, dailyTransactionLimit: dailyLimit })
     });
 
     const accountNumber = `PF${Date.now()}`.slice(-10);
-    const bankIfsc = `PFLW${String(Date.now()).slice(-4)}`;
+    const bankIfsc      = `PFLW${String(Date.now()).slice(-4)}`;
 
     const createdAccount = await fetchJson(`/api/users/${user.id}/accounts`, {
       method: "POST",
@@ -163,15 +236,15 @@ async function createUserAndAccount() {
     });
 
     document.getElementById("createUserForm")?.reset();
-    document.getElementById("newUserCurrency").value = "USD";
+    document.getElementById("newUserCurrency").value    = "INR";
     document.getElementById("newUserAccountType").value = "Checking Account";
-    document.getElementById("newUserBankName").value = "PayFlow Bank";
-    document.getElementById("newUserBalance").value = "0.00";
+    document.getElementById("newUserBankName").value    = "PayFlow Bank";
+    document.getElementById("newUserBalance").value     = "0.00";
+    document.getElementById("newUserDailyLimit").value  = "5000.00";
     createUserModal?.hide();
 
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(createdAccount));
-    await loadAccounts();
-    selectAccount(createdAccount.id);
+    window.location.href = "dashboard.html";
   } catch (error) {
     setAlert("createUserAlertArea", error.message || "Unable to create user.", "danger");
   } finally {
@@ -179,12 +252,55 @@ async function createUserAndAccount() {
   }
 }
 
-/* ====== Select account → dashboard ====== */
-function selectAccount(id) {
-  const acc = accounts.find(a => a.id === id);
-  if (!acc) return;
-  localStorage.setItem(ACCOUNT_KEY, JSON.stringify(acc));
-  window.location.href = "dashboard.html";
+/* ====== Create New Account for existing selected user ====== */
+function initCreateAccountFlow() {
+  document.getElementById("createAccountBtn")?.addEventListener("click", createAccountForUser);
+}
+
+async function createAccountForUser() {
+  clearAlert("createAccountAlertArea");
+  if (!selectedUser) return setAlert("createAccountAlertArea", "No user selected.", "danger");
+
+  const accountType    = document.getElementById("newAccountType")?.value.trim() || "Savings Account";
+  const currencyCode   = document.getElementById("newAccountCurrency")?.value || "INR";
+  const openingBalance = Number(document.getElementById("newAccountBalance")?.value || 0);
+  const bankName       = document.getElementById("newAccountBankName")?.value.trim() || "PayFlow Bank";
+  const accountStatus  = document.getElementById("newAccountStatus")?.value || "ACTIVE";
+
+  if (Number.isNaN(openingBalance) || openingBalance < 0)
+    return setAlert("createAccountAlertArea", "Opening balance cannot be negative.", "warning");
+
+  const btn = document.getElementById("createAccountBtn");
+  setLoading(btn, true, "Creating...");
+
+  try {
+    const accountNumber = `PF${Date.now()}`.slice(-10);
+    const bankIfsc      = `PFLW${String(Date.now()).slice(-4)}`;
+
+    const created = await fetchJson(`/api/users/${selectedUser.id}/accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accountHolderName: selectedUser.fullName,
+        currencyCode,
+        balance: openingBalance,
+        accountType,
+        bankName,
+        bankIfsc,
+        accountNumber,
+        accountStatus
+      })
+    });
+
+    createAccountModal?.hide();
+    clearAlert("createAccountAlertArea");
+    localStorage.setItem(ACCOUNT_KEY, JSON.stringify(created));
+    window.location.href = "dashboard.html";
+  } catch (error) {
+    setAlert("createAccountAlertArea", error.message || "Unable to create account.", "danger");
+  } finally {
+    setLoading(btn, false, '<i class="bi bi-plus-circle me-1"></i>Create Account');
+  }
 }
 
 /* ====== Helpers ====== */
@@ -233,29 +349,20 @@ async function fetchJson(path, options) {
     let message = `Request failed (${response.status})`;
     try {
       const data = await response.json();
-      if (data && typeof data.message === "string") {
-        message = data.message;
-      }
+      if (data && typeof data.message === "string") message = data.message;
     } catch {
-      try {
-        message = await response.text();
-      } catch {
-        // ignore fallback parse errors
-      }
+      try { message = await response.text(); } catch {}
     }
     throw new Error(message);
   }
-  if (response.status === 204) {
-    return null;
-  }
+  if (response.status === 204) return null;
   return response.json();
 }
 
 function setLoading(btn, loading, label) {
   if (!btn) return;
-  btn.disabled = loading;
+  btn.disabled  = loading;
   btn.innerHTML = loading
     ? `<span class="spinner-border spinner-border-sm me-1" role="status"></span>${label}`
     : label;
 }
-

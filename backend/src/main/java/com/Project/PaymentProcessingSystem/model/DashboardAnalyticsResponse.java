@@ -12,6 +12,9 @@ public class DashboardAnalyticsResponse {
     private BigDecimal totalAmountProcessed;
     private BigDecimal averageTransactionAmount;
     private BigDecimal totalBalance;
+    private BigDecimal dailyTransactionLimit;
+    private BigDecimal spentToday;
+    private BigDecimal remainingDailyLimit;
     private BigDecimal income;
     private BigDecimal expense;
     private BigDecimal largestTransaction;
@@ -79,6 +82,30 @@ public class DashboardAnalyticsResponse {
 
     public void setTotalBalance(BigDecimal totalBalance) {
         this.totalBalance = totalBalance;
+    }
+
+    public BigDecimal getDailyTransactionLimit() {
+        return dailyTransactionLimit;
+    }
+
+    public void setDailyTransactionLimit(BigDecimal dailyTransactionLimit) {
+        this.dailyTransactionLimit = dailyTransactionLimit;
+    }
+
+    public BigDecimal getSpentToday() {
+        return spentToday;
+    }
+
+    public void setSpentToday(BigDecimal spentToday) {
+        this.spentToday = spentToday;
+    }
+
+    public BigDecimal getRemainingDailyLimit() {
+        return remainingDailyLimit;
+    }
+
+    public void setRemainingDailyLimit(BigDecimal remainingDailyLimit) {
+        this.remainingDailyLimit = remainingDailyLimit;
     }
 
     public BigDecimal getIncome() {

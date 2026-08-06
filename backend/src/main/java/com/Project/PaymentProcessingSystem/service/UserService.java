@@ -39,11 +39,10 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User email is required");
         }
         if (user.getDefaultCurrency() == null || user.getDefaultCurrency().trim().isEmpty()) {
-            user.setDefaultCurrency("USD");
+            user.setDefaultCurrency("INR");
         }
         String normalizedCurrency = user.getDefaultCurrency().trim().toUpperCase(Locale.ROOT);
-        if (!("USD".equals(normalizedCurrency) || "INR".equals(normalizedCurrency)
-                || "EUR".equals(normalizedCurrency) || "GBP".equals(normalizedCurrency))) {
+        if (!("USD".equals(normalizedCurrency) || "INR".equals(normalizedCurrency))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported default currency");
         }
         user.setDefaultCurrency(normalizedCurrency);
@@ -62,6 +61,16 @@ public class UserService {
 
         user.setId(null);
         user.setEmail(user.getEmail().trim().toLowerCase());
+        return userRepository.save(user);
+    }
+
+    public User updateDailyTransactionLimit(Long userId, BigDecimal dailyLimit) {
+        if (dailyLimit == null || dailyLimit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Daily transaction limit must be greater than zero");
+        }
+        User user = getUserById(userId);
+        user.setDailyTransactionLimit(dailyLimit);
         return userRepository.save(user);
     }
 }
