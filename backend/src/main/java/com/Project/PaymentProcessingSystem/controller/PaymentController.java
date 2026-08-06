@@ -47,7 +47,7 @@ public class PaymentController {
 
     @GetMapping
     public List<Payment> getAllPayments(@RequestParam(required = false) Set<PaymentStatus> status,
-                                        @RequestParam(required = false) Long userId,
+                                        @RequestParam Long userId,
                                         @RequestParam(required = false) PaymentType paymentType,
                                         @RequestParam(required = false) String currency,
                                         @RequestParam(required = false) String senderName,
@@ -108,8 +108,9 @@ public class PaymentController {
     }
 
     @GetMapping("/{id}/history")
-    public List<PaymentStatusAudit> getHistory(@PathVariable Long id) {
-        return paymentService.getPaymentAuditTrail(id);
+    public List<PaymentStatusAudit> getHistory(@PathVariable Long id,
+                                               @RequestParam Long userId) {
+        return paymentService.getPaymentAuditTrail(id, userId);
     }
 
     @PostMapping
